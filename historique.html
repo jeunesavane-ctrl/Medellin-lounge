@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Historique — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .rap { padding:12px 0; border-bottom:1px solid var(--line); }
+  .rap .top { display:flex; justify-content:space-between; align-items:center; }
+  .rap .date { font-weight:700; }
+  .rap .net { font-weight:800; color:var(--gold); }
+  .rap .meta { font-size:12px; color:var(--muted); margin-top:4px; display:flex; gap:12px; flex-wrap:wrap; }
+  .filters { display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
+  .filters > div { flex:1; min-width:120px; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Historique des rapports</h1>
+  <div class="ml-sub" id="sub"></div>
+
+  <div class="card">
+    <div class="filters">
+      <div><label>Filtrer par mois</label><input id="fMonth" type="month" style="margin:0"></div>
+      <button class="btn btn-ghost" id="clearFilter" style="width:auto">Tous</button>
+      <button class="btn" id="exportBtn" style="width:auto">Export CSV</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row between">
+      <h2 style="margin:0">Rapports</h2>
+      <span class="muted" id="count"></span>
+    </div>
+    <div id="list" class="mt">Chargement…</div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["manager", "owner"])) throw new Error("non autorisé");
+
+  const isOwner = ML.getRole() === "owner";
+  let all = [];
+
+  async function load(){
+    const { data } = await db.from("rapports").select("*").order("date", { ascending: false });
+    all = data || [];
+    render();
+  }
+
+  function filtered(){
+    const m = $("fMonth").value;
+    return m ? all.filter(r => (r.date||"").slice(0,7) === m) : all;
+  }
+
+  function render(){
+    const rows = filtered();
+    $("count").textContent = rows.length + " rapport" + (rows.length>1?"s":"");
+    const totNet = rows.reduce((a,r)=>a+(r.net||0),0);
+    $("sub").textContent = "Net cumulé affiché : " + gnf(totNet);
+    const el = $("list");
+    if (!rows.length){ el.innerHTML = `<p class="muted">Aucun rapport.</p>`; return; }
+    el.innerHTML = rows.map(r=>`
+      <div class="rap" data-id="${escHtml(r.id)}">
+        <div class="top">
+          <span class="date">${escHtml(frDate(r.date))} <span class="muted">· N°${r.num}</span></span>
+          <span class="net">${gnf(r.net)}</span>
+        </div>
+        <div class="meta">
+          <span>Recettes ${gnf(r.recettes)}</span>
+          <span>Achats ${gnf(r.total_achats)}</span>
+          <span>Manager : ${escHtml(r.manager||"—")}</span>
+          <span>Caissière : ${escHtml(r.caissier||"—")}</span>
+        </div>
+        ${isOwner ? `<button class="btn btn-sm btn-ghost mt r-del">Supprimer</button>` : ""}
+      </div>`).join("");
+  }
+
+  $("fMonth").addEventListener("change", render);
+  $("clearFilter").addEventListener("click", ()=>{ $("fMonth").value=""; render(); });
+
+  $("list").addEventListener("click", async (ev)=>{
+    if (!ev.target.closest(".r-del")) return;
+    const row = ev.target.closest(".rap"); const id = row.dataset.id;
+    const rap = all.find(r=>r.id===id); if(!rap) return;
+    const isToday = rap.date === todayISO();
+    const msg = isToday
+      ? "Supprimer le rapport du JOUR ? La session sera rouverte (la serveuse pourra ressaisir)."
+      : "Supprimer ce rapport passé ? La session repassera en 'clôturée caissière' (revalidation possible).";
+    if (!confirm(msg)) return;
+    const { error } = await db.from("rapports").delete().eq("id", id);
+    if (error){ toast("Erreur de suppression","ko"); return; }
+    if (rap.session_id){
+      await db.from("sessions_caisse").update({ statut: isToday ? "ouvert" : "valide_caissier" }).eq("id", rap.session_id);
+    }
+    await ML.logAction(`Suppression rapport N°${rap.num} (${rap.date})`);
+    toast("Rapport supprimé","ok");
+    load();
+  });
+
+  $("exportBtn").addEventListener("click", ()=>{
+    const rows = filtered();
+    if (!rows.length){ toast("Rien à exporter",""); return; }
+    const header = ["Date","N°","Recettes","Achats","Net","Manager","Caissiere"];
+    const lines = rows.map(r=>[r.date, r.num, r.recettes||0, r.total_achats||0, r.net||0, r.manager||"", r.caissier||""]);
+    const csv = [header, ...lines].map(l=>l.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\r\n");
+    const blob = new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "rapports_medellin_" + todayISO() + ".csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("Export généré","ok");
+  });
+
+  load().catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+</script>
+</body></html>

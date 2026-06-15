@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paramètres — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .tbl-row { display: grid; grid-template-columns: 1fr 70px auto auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .tbl-row input { margin: 0; }
+  .tbl-row .st { font-size: 12px; }
+  .add-row { display: grid; grid-template-columns: 1fr 70px auto; gap: 8px; align-items: end; }
+  .hint { font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
+  @media (max-width:560px){ .tbl-row{ grid-template-columns: 1fr 56px auto auto; } }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Paramètres</h1>
+  <div class="ml-sub">Configuration générale du lounge — accès gestionnaire</div>
+
+  <!-- ============ PINs ============ -->
+  <div class="card">
+    <h2 style="margin-top:0">Codes PIN</h2>
+    <p class="hint">Laisse vide pour ne pas changer. 4 chiffres minimum.</p>
+
+    <label>PIN gestionnaire (owner)</label>
+    <input id="pinOwner" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••">
+
+    <label>PIN manager de secours</label>
+    <input id="pinManager" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••">
+
+    <label>PIN staff global <span class="muted">(non utilisé en connexion)</span></label>
+    <input id="pinStaff" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••">
+
+    <button class="btn" id="savePins">Enregistrer les PINs</button>
+  </div>
+
+  <!-- ============ Configuration ============ -->
+  <div class="card">
+    <h2 style="margin-top:0">Configuration</h2>
+
+    <label>Nom du gestionnaire</label>
+    <input id="ownerNom" type="text" placeholder="Nom affiché">
+
+    <label>Message aux managers</label>
+    <textarea id="messageManager" rows="2" placeholder="Message visible par les managers"></textarea>
+
+    <label>Objectif journalier (GNF)</label>
+    <input id="objectif" type="number" min="0" placeholder="0">
+
+    <label>Part du lounge avant distribution (%)</label>
+    <input id="partLounge" type="number" min="0" max="100" placeholder="10">
+
+    <label>Part du gestionnaire / owner (%)</label>
+    <input id="ownerPct" type="number" min="0" max="100" placeholder="0">
+    <p class="hint" id="pctHint">—</p>
+
+    <button class="btn" id="saveConfig">Enregistrer la configuration</button>
+  </div>
+
+  <!-- ============ Tables du lounge ============ -->
+  <div class="card">
+    <h2 style="margin-top:0">Tables du lounge</h2>
+    <div id="tablesList"></div>
+
+    <h2>Ajouter une table</h2>
+    <div class="add-row">
+      <div><label>Nom</label><input id="newLabel" type="text" placeholder="Ex : T9, Bar, Terrasse"></div>
+      <div><label>Ordre</label><input id="newOrdre" type="number" min="0" placeholder="0"></div>
+      <button class="btn btn-sm" id="addTable">Ajouter</button>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["owner"])) throw new Error("non autorisé");
+
+  let assocSum = 0;
+
+  async function init() {
+    await Promise.all([loadConfig(), loadTables()]);
+  }
+
+  // ---------- Configuration ----------
+  async function loadConfig() {
+    const [{ data: cfgRows }, { data: assoc }] = await Promise.all([
+      db.from("config").select("key,value"),
+      db.from("associes").select("pourcentage").not("actif", "is", false),
+    ]);
+    const C = {};
+    (cfgRows || []).forEach((r) => (C[r.key] = r.value));
+    assocSum = (assoc || []).reduce((s, a) => s + (Number(a.pourcentage) || 0), 0);
+
+    $("ownerNom").value = C.owner_nom || "";
+    $("messageManager").value = C.message_manager || "";
+    $("objectif").value = C.objectif_journalier || "";
+    $("partLounge").value = C.part_lounge ?? "";
+    $("ownerPct").value = C.owner_pct ?? String(Math.max(0, 100 - assocSum));
+    updatePctHint();
+  }
+
+  function updatePctHint() {
+    const op = Number($("ownerPct").value) || 0;
+    const total = op + assocSum;
+    const ok = total === 100;
+    $("pctHint").innerHTML =
+      `Associés actifs : <b>${assocSum}%</b> + owner : <b>${op}%</b> = <b>${total}%</b> ` +
+      (ok ? `<span class="gold">✓</span>` : `<span style="color:var(--ko)">— doit faire 100%</span>`);
+  }
+  $("ownerPct").addEventListener("input", updatePctHint);
+
+  async function saveConfig() {
+    const ownerPct = Number($("ownerPct").value) || 0;
+    const partLounge = Number($("partLounge").value) || 0;
+    if (ownerPct + assocSum !== 100) {
+      toast("Owner % + associés doit faire 100", "ko"); return;
+    }
+    if (partLounge < 0 || partLounge > 100) { toast("Part lounge invalide", "ko"); return; }
+
+    const rows = [
+      { key: "owner_nom", value: $("ownerNom").value.trim() },
+      { key: "message_manager", value: $("messageManager").value.trim() },
+      { key: "objectif_journalier", value: String(Number($("objectif").value) || 0) },
+      { key: "part_lounge", value: String(partLounge) },
+      { key: "owner_pct", value: String(ownerPct) },
+    ];
+    const { error } = await db.from("config").upsert(rows, { onConflict: "key" });
+    if (error) { toast("Erreur d'enregistrement", "ko"); return; }
+    await ML.logAction("MAJ configuration");
+    toast("Configuration enregistrée", "ok");
+  }
+  $("saveConfig").addEventListener("click", saveConfig);
+
+  // ---------- PINs ----------
+  async function savePins() {
+    const map = [
+      ["pin_owner", $("pinOwner").value.trim()],
+      ["pin_manager", $("pinManager").value.trim()],
+      ["pin_staff", $("pinStaff").value.trim()],
+    ];
+    const rows = [];
+    for (const [key, val] of map) {
+      if (!val) continue;
+      if (!/^\d{4,}$/.test(val)) { toast("PIN : 4 chiffres minimum", "ko"); return; }
+      rows.push({ key, value: await sha256(val) });
+    }
+    if (!rows.length) { toast("Aucun PIN à changer", ""); return; }
+    const { error } = await db.from("config").upsert(rows, { onConflict: "key" });
+    if (error) { toast("Erreur d'enregistrement", "ko"); return; }
+    await ML.logAction("MAJ des PINs (" + rows.map((r) => r.key).join(", ") + ")");
+    $("pinOwner").value = $("pinManager").value = $("pinStaff").value = "";
+    toast("PIN(s) enregistré(s)", "ok");
+  }
+  $("savePins").addEventListener("click", savePins);
+
+  // ---------- Tables du lounge ----------
+  async function loadTables() {
+    const { data } = await db.from("tables_lounge").select("*").order("ordre", { ascending: true });
+    const el = $("tablesList");
+    if (!data || !data.length) {
+      el.innerHTML = `<p class="muted">Aucune table. Ajoute-en ci-dessous.</p>`;
+      return;
+    }
+    el.innerHTML = data.map((t) => `
+      <div class="tbl-row" data-id="${escHtml(t.id)}">
+        <input class="t-label" type="text" value="${escHtml(t.label)}">
+        <input class="t-ordre" type="number" value="${Number(t.ordre) || 0}">
+        <span class="st tag ${t.actif ? "tag-ok" : "tag-muted"}">${t.actif ? "Active" : "Inactive"}</span>
+        <button class="btn btn-sm btn-ghost t-save">Enregistrer</button>
+      </div>`).join("");
+  }
+
+  $("tablesList").addEventListener("click", async (ev) => {
+    const btn = ev.target.closest(".t-save");
+    if (!btn) return;
+    const row = btn.closest(".tbl-row");
+    const id = row.dataset.id;
+    const label = row.querySelector(".t-label").value.trim();
+    const ordre = Number(row.querySelector(".t-ordre").value) || 0;
+    const wasActive = row.querySelector(".st").classList.contains("tag-ok");
+    if (!label) { toast("Nom requis", "ko"); return; }
+    const { error } = await db.from("tables_lounge").update({ label, ordre }).eq("id", id);
+    if (error) { toast(error.code === "23505" ? "Nom déjà utilisé" : "Erreur", "ko"); return; }
+    await ML.logAction("MAJ table " + label);
+    toast("Table enregistrée", "ok");
+  });
+
+  // bouton activer/désactiver : clic sur le tag de statut
+  $("tablesList").addEventListener("click", async (ev) => {
+    const st = ev.target.closest(".st");
+    if (!st) return;
+    const row = st.closest(".tbl-row");
+    const id = row.dataset.id;
+    const newActif = !st.classList.contains("tag-ok");
+    const { error } = await db.from("tables_lounge").update({ actif: newActif }).eq("id", id);
+    if (error) { toast("Erreur", "ko"); return; }
+    await ML.logAction((newActif ? "Activer" : "Désactiver") + " table");
+    loadTables();
+  });
+
+  async function addTable() {
+    const label = $("newLabel").value.trim();
+    const ordre = Number($("newOrdre").value) || 0;
+    if (!label) { toast("Nom requis", "ko"); return; }
+    const { error } = await db.from("tables_lounge").insert({ label, ordre, actif: true });
+    if (error) { toast(error.code === "23505" ? "Nom déjà utilisé" : "Erreur", "ko"); return; }
+    await ML.logAction("Ajout table " + label);
+    $("newLabel").value = ""; $("newOrdre").value = "";
+    toast("Table ajoutée", "ok");
+    loadTables();
+  }
+  $("addTable").addEventListener("click", addTable);
+
+  init().catch((e) => { console.error(e); toast("Erreur de chargement", "ko"); });
+</script>
+</body></html>

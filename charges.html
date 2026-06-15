@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Charges — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .chg { display:grid; grid-template-columns:1fr auto auto auto; gap:8px; align-items:center;
+         padding:10px 0; border-bottom:1px solid var(--line); }
+  .chg .d { font-size:12px; color:var(--muted); margin-top:2px; }
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; }
+  .form-grid .full { grid-column:1/-1; }
+  .sumrow { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line); }
+  .chk { display:flex; align-items:center; gap:8px; }
+  .chk input { width:auto; margin:0; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Charges fixes</h1>
+  <div class="ml-sub">Charges externes du lounge (loyer, électricité…). Les salaires sont gérés dans RH.</div>
+
+  <div class="card">
+    <div class="row between">
+      <h2 style="margin:0">Mois</h2>
+      <input id="month" type="month" style="width:auto;margin:0">
+    </div>
+    <div class="card mt" style="background:var(--bg)">
+      <div class="sumrow"><span>Total charges du mois</span><b id="sTotal">—</b></div>
+      <div class="sumrow"><span>Payé</span><b id="sPaye" class="neg" style="color:var(--ok)">—</b></div>
+      <div class="sumrow" style="border:none"><span>Reste à payer</span><b id="sDu" class="pos" style="color:var(--ko)">—</b></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0" id="formTitle">Ajouter une charge</h2>
+    <div id="editBanner" class="tag tag-warn mb" style="display:none">Modification en cours</div>
+    <div class="form-grid">
+      <div class="full"><label>Libellé</label><input id="cLabel" type="text" placeholder="Ex : Loyer du local"></div>
+      <div><label>Catégorie</label>
+        <input id="cCat" list="catList" placeholder="Ex : Loyer">
+        <datalist id="catList">
+          <option value="Loyer"><option value="Électricité"><option value="Eau"><option value="Internet">
+          <option value="Entretien"><option value="Sécurité"><option value="Taxes"><option value="Divers">
+        </datalist>
+      </div>
+      <div><label>Montant (GNF)</label><input id="cMontant" type="number" min="1" placeholder="0"></div>
+      <div><label>Récurrence</label>
+        <select id="cRec"><option value="mensuel">Mensuelle</option><option value="ponctuel">Ponctuelle</option></select>
+      </div>
+      <div class="full chk"><input id="cPaye" type="checkbox"><label for="cPaye" style="margin:0">Déjà payée</label></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="saveChg">Enregistrer</button>
+      <button class="btn btn-ghost" id="cancelChg" style="display:none">Annuler</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Charges du mois</h2>
+    <div id="list">Chargement…</div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["manager", "owner"])) throw new Error("non autorisé");
+
+  let editId = null;
+
+  function curMonth(){ return $("month").value || todayISO().slice(0,7); }
+
+  async function loadList(){
+    const mois = curMonth();
+    const { data } = await db.from("charges").select("*").eq("mois", mois).order("paye").order("label");
+    const charges = data || [];
+    const total = charges.reduce((a,c)=>a+(c.montant||0),0);
+    const paye = charges.filter(c=>c.paye).reduce((a,c)=>a+(c.montant||0),0);
+    $("sTotal").textContent = gnf(total);
+    $("sPaye").textContent = gnf(paye);
+    $("sDu").textContent = gnf(total - paye);
+    const el = $("list");
+    if (!charges.length){ el.innerHTML = `<p class="muted">Aucune charge pour ${escHtml(frMonth(mois+"-01"))}.</p>`; return; }
+    el.innerHTML = charges.map(c=>`
+      <div class="chg" data-id="${escHtml(c.id)}">
+        <div><div style="font-weight:600">${escHtml(c.label)}</div>
+          <div class="d">${escHtml(c.categorie||"")}${c.recurrence==="mensuel"?" · mensuelle":""}${c.paye&&c.date_paiement?" · payé le "+escHtml(frDateShort(c.date_paiement)):""}</div></div>
+        <b>${gnf(c.montant)}</b>
+        <button class="btn btn-sm ${c.paye?"btn-ghost":""} c-pay">${c.paye?"Payé ✓":"Marquer payé"}</button>
+        <button class="btn btn-sm btn-ghost c-edit">✎</button>
+      </div>`).join("");
+  }
+
+  function fillForm(c){
+    editId = c.id;
+    $("cLabel").value = c.label||""; $("cCat").value = c.categorie||"";
+    $("cMontant").value = c.montant??""; $("cRec").value = c.recurrence||"mensuel";
+    $("cPaye").checked = !!c.paye;
+    $("formTitle").textContent = "Modifier : "+c.label;
+    $("editBanner").style.display=""; $("saveChg").textContent="Mettre à jour"; $("cancelChg").style.display="";
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+  function resetForm(){
+    editId = null;
+    ["cLabel","cCat","cMontant"].forEach(id=>$(id).value=""); $("cRec").value="mensuel"; $("cPaye").checked=false;
+    $("formTitle").textContent="Ajouter une charge";
+    $("editBanner").style.display="none"; $("saveChg").textContent="Enregistrer"; $("cancelChg").style.display="none";
+  }
+
+  async function save(){
+    const label = $("cLabel").value.trim();
+    if (!label){ toast("Libellé requis","ko"); return; }
+    const montant = Math.round(Number($("cMontant").value)||0);
+    if (!(montant>0)){ toast("Montant invalide","ko"); return; }
+    const paye = $("cPaye").checked;
+    const rec = {
+      label, montant, mois: curMonth(),
+      categorie: $("cCat").value.trim()||null,
+      recurrence: $("cRec").value,
+      paye,
+      date_paiement: paye ? todayISO() : null,
+    };
+    let error;
+    if (editId) ({ error } = await db.from("charges").update(rec).eq("id", editId));
+    else ({ error } = await db.from("charges").insert(rec));
+    if (error){ toast("Erreur","ko"); console.error(error); return; }
+    await ML.logAction((editId?"MAJ charge ":"Ajout charge ")+label);
+    toast(editId?"Charge mise à jour":"Charge ajoutée","ok");
+    resetForm(); loadList();
+  }
+
+  $("list").addEventListener("click", async (ev)=>{
+    const row = ev.target.closest(".chg"); if(!row) return; const id = row.dataset.id;
+    if (ev.target.closest(".c-edit")){
+      const { data } = await db.from("charges").select("*").eq("id", id).single();
+      if (data) fillForm(data);
+    } else if (ev.target.closest(".c-pay")){
+      const { data } = await db.from("charges").select("paye").eq("id", id).single();
+      const np = !data.paye;
+      const { error } = await db.from("charges").update({ paye: np, date_paiement: np?todayISO():null }).eq("id", id);
+      if (error){ toast("Erreur","ko"); return; }
+      await ML.logAction("Charge "+(np?"payée":"non payée")); loadList();
+    }
+  });
+
+  $("saveChg").addEventListener("click", save);
+  $("cancelChg").addEventListener("click", resetForm);
+  $("month").addEventListener("change", loadList);
+
+  $("month").value = todayISO().slice(0,7);
+  loadList().catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+</script>
+</body></html>

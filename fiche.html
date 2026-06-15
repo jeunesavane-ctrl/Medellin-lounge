@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ma fiche — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .sumrow { display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line); }
+  .sumrow.tot { border:none; font-size:18px; } .sumrow.tot b { color:var(--gold); }
+  .neg { color:var(--ko); } .pos2 { color:var(--ok); }
+  .av { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line); font-size:14px; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Ma fiche</h1>
+  <div class="row between">
+    <div class="ml-sub" id="sub"></div>
+    <input id="month" type="month" style="width:auto;margin:0">
+  </div>
+  <div id="content">Chargement…</div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["staff", "caissier", "chicha", "achats", "manager"])) throw new Error("non autorisé");
+
+  const meId = ML.getExtra().employe_id || null;
+
+  function monthBounds(ym){ const [y,m]=ym.split("-").map(Number); const nm=m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,"0")}`; return { start:`${ym}-01`, end:`${nm}-01` }; }
+
+  async function ecartsMois(emp, ym){
+    const { start, end } = monthBounds(ym);
+    const { data:sessions } = await db.from("sessions_caisse").select("id,ecart,caissier_id").gte("date",start).lt("date",end);
+    let dette=0, surplus=0;
+    for (const s of (sessions||[])){
+      if (emp.role === "caissier"){
+        if (s.caissier_id===emp.id){ const e=s.ecart||0; if(e>0) dette+=e; else surplus+=(-e); }
+      } else {
+        const { data:vs } = await db.from("ventes_session").select("total").eq("session_id",s.id).eq("employe_id",emp.id).in("paiement",["especes","om"]);
+        if (!vs||!vs.length) continue;
+        const decl=(vs).reduce((a,v)=>a+(v.total||0),0);
+        const { data:vf } = await db.from("verifications_staff").select("recu_especes,recu_om").eq("session_id",s.id).eq("employe_id",emp.id).maybeSingle();
+        const recu=vf?((vf.recu_especes||0)+(vf.recu_om||0)):0;
+        const e=decl-recu; if(e>0) dette+=e; else surplus+=(-e);
+      }
+    }
+    const { data:remb } = await db.from("remboursements_ecart").select("montant").eq("employe_id",emp.id).eq("statut","valide").gte("created_at",start).lt("created_at",end);
+    const rembSum=(remb||[]).reduce((a,r)=>a+(r.montant||0),0);
+    return { dette: Math.max(0,dette-rembSum), surplus };
+  }
+
+  async function render(){
+    if (!meId){ $("content").innerHTML = `<div class="card"><p class="muted">Compte d'accès sans fiche de paie individuelle.</p></div>`; return; }
+    const ym = $("month").value;
+    $("sub").textContent = frMonth(ym+"-01");
+    const { data:emp } = await db.from("employes").select("*").eq("id",meId).single();
+    if (!emp){ $("content").innerHTML = `<p class="muted">Profil introuvable.</p>`; return; }
+    const { start, end } = monthBounds(ym);
+    const brut = emp.salaire_base||0;
+    const [{ data:pres }, { data:just }, { data:av }, { data:paye }] = await Promise.all([
+      db.from("presences").select("statut").eq("employe_id",meId).gte("date",start).lt("date",end),
+      db.from("justifications").select("id").eq("employe_id",meId).eq("type","absence").eq("statut","approuvee").gte("date",start).lt("date",end),
+      db.from("avances").select("*").eq("employe_id",meId).order("date",{ascending:false}),
+      db.from("salaires_verses").select("net_verse,paye_le").eq("employe_id",meId).eq("mois",ym).maybeSingle(),
+    ]);
+    const absC=(pres||[]).filter(p=>p.statut==="absent").length;
+    const retC=(pres||[]).filter(p=>p.statut==="retard").length;
+    const absNJ=absC-((just||[]).length);
+    let sancAbs=0; if(absNJ===2) sancAbs=Math.round(brut*0.10); else if(absNJ>=3) sancAbs=Math.round(brut*0.15);
+    const sancRet=retC>=5?Math.round(brut*0.10):0;
+    const avancesDed=(av||[]).filter(a=>a.statut==="approuvee"&&!a.rembourse).reduce((a,x)=>a+(x.montant||0),0);
+    const { dette, surplus } = await ecartsMois(emp, ym);
+    const net = Math.max(0, brut - sancAbs - sancRet - avancesDed - dette + surplus);
+
+    const statutLine = paye
+      ? `<div class="tag tag-ok mb">Salaire versé le ${escHtml(frDateShort(paye.paye_le))} — ${gnf(paye.net_verse)}</div>`
+      : `<div class="tag tag-warn mb">Salaire non encore versé (estimation)</div>`;
+
+    $("content").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">${escHtml(((emp.prenom?emp.prenom+" ":"")+emp.nom).trim())} — ${escHtml(emp.role)}</h2>
+        ${statutLine}
+        <div class="sumrow"><span>Salaire de base</span><b>${gnf(brut)}</b></div>
+        <div class="sumrow"><span>Absences non justifiées</span><b>${absNJ>0?absNJ:0}</b></div>
+        <div class="sumrow"><span>Sanction absences</span><b class="neg">− ${gnf(sancAbs)}</b></div>
+        <div class="sumrow"><span>Retards (${retC})</span><b class="neg">− ${gnf(sancRet)}</b></div>
+        <div class="sumrow"><span>Avances à déduire</span><b class="neg">− ${gnf(avancesDed)}</b></div>
+        <div class="sumrow"><span>Écarts (dettes)</span><b class="neg">− ${gnf(dette)}</b></div>
+        ${surplus?`<div class="sumrow"><span>Bonus (excédents)</span><b class="pos2" style="color:var(--ok)">+ ${gnf(surplus)}</b></div>`:""}
+        <div class="sumrow tot"><span>${paye?"Net versé":"Net estimé"}</span><b>${gnf(paye?paye.net_verse:net)}</b></div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">Mes avances</h2>
+        ${(av&&av.length)?av.map(a=>`<div class="av"><span>${escHtml(frDateShort(a.date))} — ${gnf(a.montant)} <span class="tag ${a.statut==="approuvee"?"tag-ok":a.statut==="rejetee"?"tag-ko":"tag-warn"}">${escHtml(a.statut)}</span>${a.rembourse?' <span class="tag tag-muted">remboursée</span>':""}</span></div>`).join(""):`<p class="muted">Aucune avance.</p>`}
+        <a class="btn mt" href="avance.html">Demander une avance</a>
+      </div>`;
+  }
+
+  $("month").value = todayISO().slice(0,7);
+  $("month").addEventListener("change", render);
+  render().catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+</script>
+</body></html>

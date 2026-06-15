@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rapport — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .hint { font-size:12px; color:var(--muted); margin:-6px 0 12px; }
+  .hint .ec { font-weight:700; }
+  .sumrow { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line); }
+  .sumrow.big { font-size:18px; }
+  .sumrow.big b { color:var(--gold); }
+  .det { font-size:13px; color:var(--muted); padding:3px 0; display:flex; justify-content:space-between; }
+  .banner { padding:10px 14px; border-radius:10px; font-weight:600; margin-bottom:14px; }
+  .b-warn { background:rgba(224,161,58,.12); border:1px solid var(--warn); color:var(--warn); }
+  .b-ok { background:rgba(46,204,113,.12); border:1px solid var(--ok); color:var(--ok); }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Rapport journalier</h1>
+  <div class="ml-sub" id="sub"></div>
+  <div id="banner"></div>
+  <div id="content"></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["manager", "owner"])) throw new Error("non autorisé");
+
+  const theDate = new URLSearchParams(location.search).get("date") || todayISO();
+  const st = { session:null, ventes:[], prodMap:{}, achats:[], achatsTotal:0, autoChicha:0, autoBoissons:0, chichaRows:{}, boissonsRows:{}, empMap:{}, cfg:{}, associes:[], saving:false };
+
+  async function load(){
+    $("sub").textContent = frDate(theDate);
+    const { data:session } = await db.from("sessions_caisse").select("*").eq("date", theDate).maybeSingle();
+    st.session = session;
+    if (!session){ $("banner").innerHTML = `<div class="banner b-warn">Aucune session pour cette date.</div>`; return; }
+
+    const [{ data:ventes }, { data:produits }, { data:achats }, { data:emps }, { data:cfgRows }, { data:assoc }] = await Promise.all([
+      db.from("ventes_session").select("*").eq("session_id", session.id),
+      db.from("produits").select("id,type,nom"),
+      db.from("achats_session").select("*").eq("session_id", session.id),
+      db.from("employes").select("id,prenom,nom"),
+      db.from("config").select("key,value"),
+      db.from("associes").select("nom,prenom,pourcentage").not("actif","is",false),
+    ]);
+    st.ventes = ventes||[]; st.achats = achats||[];
+    st.achatsTotal = st.achats.reduce((a,x)=>a+(x.montant||0),0);
+    (produits||[]).forEach(p=>st.prodMap[p.id]=p);
+    (emps||[]).forEach(e=>st.empMap[e.id]=((e.prenom?e.prenom+" ":"")+(e.nom||"")).trim());
+    (cfgRows||[]).forEach(r=>st.cfg[r.key]=r.value);
+    st.associes = assoc||[];
+    computeCA();
+
+    if (session.statut === "ouvert"){
+      $("banner").innerHTML = `<div class="banner b-warn">⏳ La caisse n'est pas encore clôturée. La caissière doit clôturer avant validation.</div>`;
+      renderReadonlyTotals();
+      return;
+    }
+    if (session.statut === "valide_manager"){ await renderValidated(); return; }
+    renderForm(); // valide_caissier
+  }
+
+  function computeCA(){
+    st.chichaRows = {}; st.boissonsRows = {}; st.autoChicha = 0; st.autoBoissons = 0;
+    for (const v of st.ventes){
+      const type = st.prodMap[v.produit_id]?.type || "autre";
+      if (type === "chicha"){ st.chichaRows[v.produit_nom] = (st.chichaRows[v.produit_nom]||0)+(v.total||0); st.autoChicha += v.total||0; }
+      else { st.boissonsRows[v.produit_nom] = (st.boissonsRows[v.produit_nom]||0)+(v.total||0); st.autoBoissons += v.total||0; } // boisson + autre
+    }
+  }
+
+  function rowsHtml(obj){
+    const k = Object.keys(obj);
+    if (!k.length) return `<div class="det"><span class="muted">—</span></div>`;
+    return k.map(n=>`<div class="det"><span>${escHtml(n)}</span><span>${gnf(obj[n])}</span></div>`).join("");
+  }
+
+  function renderReadonlyTotals(){
+    $("content").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">Aperçu des ventes</h2>
+        <h3>Chicha — ${gnf(st.autoChicha)}</h3>${rowsHtml(st.chichaRows)}
+        <h3>Boissons — ${gnf(st.autoBoissons)}</h3>${rowsHtml(st.boissonsRows)}
+        <div class="sumrow"><span>Achats du jour</span><b>${gnf(st.achatsTotal)}</b></div>
+      </div>`;
+  }
+
+  function renderForm(){
+    $("banner").innerHTML = `<div class="banner b-warn">Caisse clôturée — à valider.</div>`;
+    $("content").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">Chiffre d'affaires</h2>
+        <label>Total Chicha (GNF)</label>
+        <input id="tChicha" type="number" min="0" value="${st.autoChicha}">
+        <p class="hint">Calculé depuis les ventes : <b>${gnf(st.autoChicha)}</b> <span id="ecCh" class="ec"></span></p>
+        ${rowsHtml(st.chichaRows)}
+
+        <label style="margin-top:14px">Total Boissons (GNF)</label>
+        <input id="tBoissons" type="number" min="0" value="${st.autoBoissons}">
+        <p class="hint">Calculé depuis les ventes : <b>${gnf(st.autoBoissons)}</b> <span id="ecBo" class="ec"></span></p>
+        ${rowsHtml(st.boissonsRows)}
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0">Synthèse</h2>
+        <div class="sumrow"><span>Achats du jour <span class="muted">(figé)</span></span><b>${gnf(st.achatsTotal)}</b></div>
+        <div class="sumrow"><span>Recettes</span><b id="sRec">—</b></div>
+        <div class="sumrow big"><span>Net du jour</span><b id="sNet">—</b></div>
+        <button class="btn mt" id="validBtn">Valider le rapport</button>
+      </div>`;
+    ["tChicha","tBoissons"].forEach(id=>$(id).addEventListener("input",refresh));
+    $("validBtn").addEventListener("click", validate);
+    refresh();
+  }
+
+  function refresh(){
+    const ch = Number($("tChicha").value)||0;
+    const bo = Number($("tBoissons").value)||0;
+    const rec = ch + bo;
+    const net = rec - st.achatsTotal;
+    $("sRec").textContent = gnf(rec);
+    $("sNet").textContent = gnf(net);
+    ecHint("ecCh", ch - st.autoChicha);
+    ecHint("ecBo", bo - st.autoBoissons);
+  }
+  function ecHint(id, diff){
+    const el = $(id); if(!el) return;
+    if (diff === 0){ el.textContent = "✓ conforme"; el.style.color = "var(--ok)"; }
+    else { el.textContent = `écart ${diff>0?"+":""}${gnf(diff)}`; el.style.color = "var(--ko)"; }
+  }
+
+  function dailyPart(net){
+    const partLounge = Number(st.cfg.part_lounge ?? 10);
+    const assocSum = st.associes.reduce((a,x)=>a+(Number(x.pourcentage)||0),0);
+    const ownerPct = st.cfg.owner_pct != null ? Number(st.cfg.owner_pct) : Math.max(0, 100-assocSum);
+    const distribuable = Math.max(0, net) * (100 - partLounge) / 100;
+    return {
+      part_lounge: partLounge, distribuable: Math.round(distribuable),
+      owner: Math.round(distribuable * ownerPct / 100),
+      associes: st.associes.map(a=>({ nom: ((a.prenom?a.prenom+" ":"")+a.nom).trim(), pct: Number(a.pourcentage)||0, montant: Math.round(distribuable*(Number(a.pourcentage)||0)/100) })),
+    };
+  }
+
+  async function validate(){
+    if (st.saving) return;
+    const ch = Math.round(Number($("tChicha").value)||0);
+    const bo = Math.round(Number($("tBoissons").value)||0);
+    const rec = ch + bo;
+    const net = rec - st.achatsTotal;
+    if (!confirm("Valider le rapport ? Les tables seront remises à zéro pour demain.")) return;
+    st.saving = true; $("validBtn").disabled = true;
+    try {
+      const { data:mx } = await db.from("rapports").select("num").order("num",{ascending:false}).limit(1);
+      const nextNum = (mx?.[0]?.num ?? 0) + 1;
+      const { error } = await db.from("rapports").insert({
+        date: theDate, num: nextNum, session_id: st.session.id,
+        total_chicha: ch, total_boissons: bo, total_achats: st.achatsTotal,
+        recettes: rec, net,
+        manager: ML.getExtra().nom || "Manager",
+        caissier: st.empMap[st.session.caissier_id] || null,
+        part: dailyPart(net),
+        chicha_rows: st.chichaRows, boissons_rows: st.boissonsRows,
+        achats_rows: st.achats,
+      });
+      if (error){ toast(error.code==="23505" ? "Rapport déjà existant pour cette date" : "Erreur", "ko"); return; }
+      await db.from("sessions_caisse").update({ statut: "valide_manager" }).eq("id", st.session.id);
+      await db.from("tables_lounge").update({ ouverte_par: null }).eq("actif", true);
+      await ML.logAction(`Validation rapport #${nextNum} — net ${gnf(net)}`);
+      toast("Rapport validé", "ok");
+      await load();
+    } catch(e){ console.error(e); toast("Erreur de validation","ko"); }
+    finally { st.saving=false; }
+  }
+
+  async function renderValidated(){
+    const { data:rap } = await db.from("rapports").select("*").eq("date", theDate).maybeSingle();
+    $("banner").innerHTML = `<div class="banner b-ok">✓ Rapport validé${rap?` — N°${rap.num}`:""}</div>`;
+    if (!rap){ return; }
+    const part = rap.part || {};
+    $("content").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">Rapport N°${rap.num}</h2>
+        <div class="sumrow"><span>Total Chicha</span><b>${gnf(rap.total_chicha)}</b></div>
+        <div class="sumrow"><span>Total Boissons</span><b>${gnf(rap.total_boissons)}</b></div>
+        <div class="sumrow"><span>Achats</span><b>${gnf(rap.total_achats)}</b></div>
+        <div class="sumrow"><span>Recettes</span><b>${gnf(rap.recettes)}</b></div>
+        <div class="sumrow big"><span>Net</span><b>${gnf(rap.net)}</b></div>
+        <div class="det" style="margin-top:8px">Manager : ${escHtml(rap.manager||"—")} · Caissière : ${escHtml(rap.caissier||"—")}</div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">Répartition indicative du jour</h2>
+        <div class="sumrow"><span>Distribuable (après ${part.part_lounge ?? 10}% lounge)</span><b>${gnf(part.distribuable||0)}</b></div>
+        <div class="sumrow"><span>Part owner</span><b>${gnf(part.owner||0)}</b></div>
+        ${(part.associes||[]).map(a=>`<div class="sumrow"><span>${escHtml(a.nom)} (${a.pct}%)</span><b>${gnf(a.montant)}</b></div>`).join("")}
+      </div>`;
+  }
+
+  load().catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+</script>
+</body></html>

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bilan — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .sumrow { display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line); }
+  .sumrow.tot { border:none; font-size:18px; }
+  .sumrow.tot b { color:var(--gold); }
+  .neg { color:var(--ko); }
+  .sub2 { color:var(--muted); font-size:13px; }
+  .me { background:rgba(201,162,74,.10); border-radius:8px; padding:0 8px; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Bilan mensuel</h1>
+  <div class="row between">
+    <div class="ml-sub" id="sub"></div>
+    <input id="month" type="month" style="width:auto;margin:0">
+  </div>
+  <div id="content">Chargement…</div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["owner", "manager", "associe"])) throw new Error("non autorisé");
+
+  const role = ML.getRole();
+  const extra = ML.getExtra();
+  const isAssoc = role === "associe";
+  const cfg = {};
+  let associes = [], assocSum = 0;
+
+  function monthBounds(ym){ const [y,m]=ym.split("-").map(Number); const nm=m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,"0")}`; return { start:`${ym}-01`, end:`${nm}-01` }; }
+  function partLounge(){ return Number(cfg.part_lounge ?? 10); }
+  function distribPct(){ return Math.max(0, 100 - partLounge()) / 100; }
+  function ownerPct(){ return cfg.owner_pct != null ? Number(cfg.owner_pct) : Math.max(0, 100 - assocSum); }
+
+  async function periodData(ym){
+    const { start, end } = monthBounds(ym);
+    const [{ data:raps }, { data:chg }, { data:sal }] = await Promise.all([
+      db.from("rapports").select("recettes,total_achats,net").gte("date", start).lt("date", end),
+      db.from("charges").select("montant").eq("mois", ym),
+      db.from("salaires_verses").select("net_verse").eq("mois", ym),
+    ]);
+    const recettes=(raps||[]).reduce((a,r)=>a+(r.recettes||0),0);
+    const achats=(raps||[]).reduce((a,r)=>a+(r.total_achats||0),0);
+    const marge=(raps||[]).reduce((a,r)=>a+(r.net||0),0);
+    const charges=(chg||[]).reduce((a,c)=>a+(c.montant||0),0);
+    const salaires=(sal||[]).reduce((a,s)=>a+(s.net_verse||0),0);
+    return { recettes, achats, marge, charges, salaires, netForParts: marge-charges-salaires };
+  }
+
+  async function render(){
+    const ym = $("month").value;
+    $("sub").textContent = frMonth(ym+"-01");
+    const d = await periodData(ym);
+    const distribuable = Math.max(0, d.netForParts) * distribPct();
+    const retenu = Math.max(0, d.netForParts) * (partLounge()/100);
+
+    if (isAssoc){
+      const pct = Number(extra.pourcentage)||0;
+      $("content").innerHTML = `
+        <div class="card">
+          <h2 style="margin-top:0">Ma part — ${escHtml(frMonth(ym+"-01"))}</h2>
+          <div class="sumrow"><span>Résultat net du mois</span><b>${gnf(d.netForParts)}</b></div>
+          <div class="sumrow"><span>À distribuer (après ${partLounge()}% lounge)</span><b>${gnf(distribuable)}</b></div>
+          <div class="sumrow tot"><span>Votre part (${pct}%)</span><b>${gnf(distribuable*pct/100)}</b></div>
+        </div>`;
+      return;
+    }
+
+    // owner / manager : bilan complet
+    $("content").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">Compte de résultat</h2>
+        <div class="sumrow"><span>Recettes (chicha + boissons)</span><b>${gnf(d.recettes)}</b></div>
+        <div class="sumrow"><span>Achats</span><b class="neg">− ${gnf(d.achats)}</b></div>
+        <div class="sumrow"><span>Marge brute</span><b>${gnf(d.marge)}</b></div>
+        <div class="sumrow"><span>Charges fixes</span><b class="neg">− ${gnf(d.charges)}</b></div>
+        <div class="sumrow"><span>Salaires versés</span><b class="neg">− ${gnf(d.salaires)}</b></div>
+        <div class="sumrow tot"><span>Résultat net</span><b>${gnf(d.netForParts)}</b></div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">Répartition des parts</h2>
+        <div class="sumrow"><span>Part lounge retenue (${partLounge()}%)</span><b>${gnf(retenu)}</b></div>
+        <div class="sumrow"><span>Montant distribuable</span><b>${gnf(distribuable)}</b></div>
+        <div class="sumrow"><span>Owner (${ownerPct()}%)</span><b>${gnf(distribuable*ownerPct()/100)}</b></div>
+        ${associes.map(a=>`<div class="sumrow"><span>${escHtml(((a.prenom?a.prenom+" ":"")+a.nom).trim())} (${a.pourcentage}%)</span><b>${gnf(distribuable*(Number(a.pourcentage)||0)/100)}</b></div>`).join("")}
+        ${associes.length?"":`<p class="muted">Aucun associé enregistré.</p>`}
+      </div>`;
+  }
+
+  async function init(){
+    const [{ data:cfgRows }, { data:assoc }] = await Promise.all([
+      db.from("config").select("key,value"),
+      db.from("associes").select("nom,prenom,pourcentage").not("actif","is",false),
+    ]);
+    (cfgRows||[]).forEach(r=>cfg[r.key]=r.value);
+    associes = assoc||[]; assocSum = associes.reduce((a,x)=>a+(Number(x.pourcentage)||0),0);
+    $("month").value = todayISO().slice(0,7);
+    $("month").addEventListener("change", render);
+    await render();
+  }
+
+  init().catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+</script>
+</body></html>

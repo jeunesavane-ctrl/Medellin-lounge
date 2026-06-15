@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Produits — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .prod { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+          padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .prod .nom { font-weight: 700; }
+  .prod .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .prod .actions { display: flex; gap: 6px; }
+  .prod.off { opacity: .55; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  #editBanner { display:none; }
+  #editBanner.on { display:block; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Produits</h1>
+  <div class="ml-sub">Catalogue & stock — le stock n'entre jamais dans les calculs financiers</div>
+
+  <!-- Formulaire ajout / édition -->
+  <div class="card">
+    <h2 style="margin-top:0" id="formTitle">Ajouter un produit</h2>
+    <div id="editBanner" class="tag tag-warn mb">Modification en cours</div>
+    <div class="form-grid">
+      <div class="full"><label>Nom</label><input id="pNom" type="text" placeholder="Ex : Coca, Pomme glacée…"></div>
+      <div class="full"><label>Type</label>
+        <select id="pType">
+          <option value="chicha">Chicha</option>
+          <option value="boisson">Boisson</option>
+          <option value="autre">Autre</option>
+        </select>
+      </div>
+      <div><label>Prix de vente (GNF)</label><input id="pPrix" type="number" min="0" placeholder="0"></div>
+      <div><label>Prix d'achat (GNF)</label><input id="pPrixAchat" type="number" min="0" placeholder="0"></div>
+      <div><label>Stock actuel</label><input id="pStock" type="number" step="any" placeholder="0"></div>
+      <div><label>Stock minimum</label><input id="pStockMin" type="number" step="any" placeholder="0"></div>
+      <div><label>Unité de vente</label><input id="pUnite" type="text" placeholder="Ex : pièce, verre"></div>
+      <div><label>Packaging</label><input id="pPack" type="text" placeholder="Ex : carton de 24"></div>
+      <div class="full"><label>Unités par packaging</label><input id="pParPack" type="number" step="any" placeholder="1"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="saveProd">Enregistrer</button>
+      <button class="btn btn-ghost" id="cancelEdit" style="display:none">Annuler</button>
+    </div>
+  </div>
+
+  <!-- Liste -->
+  <div class="card">
+    <h2 style="margin-top:0">Catalogue</h2>
+    <div id="list">Chargement…</div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["manager", "owner"])) throw new Error("non autorisé");
+
+  let editingId = null;
+  const TYPE_LBL = { chicha: "Chicha", boisson: "Boissons", autre: "Autres" };
+
+  async function loadList() {
+    const { data, error } = await db.from("produits")
+      .select("*").order("type").order("nom");
+    const el = $("list");
+    if (error) { el.innerHTML = `<p class="muted">Erreur de chargement.</p>`; return; }
+    if (!data || !data.length) { el.innerHTML = `<p class="muted">Aucun produit. Ajoute le premier ci-dessus.</p>`; return; }
+
+    let html = "";
+    let lastType = null;
+    for (const p of data) {
+      if (p.type !== lastType) { html += `<h3>${escHtml(TYPE_LBL[p.type] || p.type)}</h3>`; lastType = p.type; }
+      const low = Number(p.stock_actuel) <= Number(p.stock_min);
+      const stockTag = `<span class="tag ${low ? "tag-ko" : "tag-muted"}">Stock : ${Number(p.stock_actuel) || 0}${low ? " ⚠" : ""}</span>`;
+      html += `
+        <div class="prod${p.actif ? "" : " off"}" data-id="${escHtml(p.id)}">
+          <div>
+            <div class="nom">${escHtml(p.nom)}</div>
+            <div class="meta">${gnf(p.prix_defaut || 0)} · ${stockTag} ${p.actif ? "" : '· <span class="tag tag-muted">Inactif</span>'}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-sm btn-ghost p-edit">Modifier</button>
+            <button class="btn btn-sm btn-ghost p-toggle">${p.actif ? "Désactiver" : "Activer"}</button>
+          </div>
+        </div>`;
+    }
+    el.innerHTML = html;
+  }
+
+  function fillForm(p) {
+    editingId = p.id;
+    $("pNom").value = p.nom || "";
+    $("pType").value = p.type || "chicha";
+    $("pPrix").value = p.prix_defaut ?? "";
+    $("pPrixAchat").value = p.prix_achat ?? "";
+    $("pStock").value = p.stock_actuel ?? "";
+    $("pStockMin").value = p.stock_min ?? "";
+    $("pUnite").value = p.unite_vente || "";
+    $("pPack").value = p.packaging_label || "";
+    $("pParPack").value = p.unite_par_packaging ?? "";
+    $("formTitle").textContent = "Modifier : " + p.nom;
+    $("editBanner").classList.add("on");
+    $("saveProd").textContent = "Mettre à jour";
+    $("cancelEdit").style.display = "";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function resetForm() {
+    editingId = null;
+    ["pNom", "pPrix", "pPrixAchat", "pStock", "pStockMin", "pUnite", "pPack", "pParPack"].forEach((id) => ($(id).value = ""));
+    $("pType").value = "chicha";
+    $("formTitle").textContent = "Ajouter un produit";
+    $("editBanner").classList.remove("on");
+    $("saveProd").textContent = "Enregistrer";
+    $("cancelEdit").style.display = "none";
+  }
+
+  async function save() {
+    const nom = $("pNom").value.trim();
+    if (!nom) { toast("Nom requis", "ko"); return; }
+    const prix = Math.round(Number($("pPrix").value) || 0);
+    if (prix < 0) { toast("Prix invalide", "ko"); return; }
+    const rec = {
+      nom,
+      type: $("pType").value,
+      prix_defaut: prix,
+      prix_achat: Math.round(Number($("pPrixAchat").value) || 0),
+      stock_actuel: Number($("pStock").value) || 0,
+      stock_min: Number($("pStockMin").value) || 0,
+      unite_vente: $("pUnite").value.trim() || null,
+      packaging_label: $("pPack").value.trim() || null,
+      unite_par_packaging: Number($("pParPack").value) || 1,
+    };
+    let error;
+    if (editingId) ({ error } = await db.from("produits").update(rec).eq("id", editingId));
+    else ({ error } = await db.from("produits").insert(rec));
+    if (error) { toast("Erreur d'enregistrement", "ko"); console.error(error); return; }
+    await ML.logAction((editingId ? "MAJ produit " : "Ajout produit ") + nom);
+    toast(editingId ? "Produit mis à jour" : "Produit ajouté", "ok");
+    resetForm();
+    loadList();
+  }
+
+  // --- Événements liste (édition / activation) ---
+  $("list").addEventListener("click", async (ev) => {
+    const row = ev.target.closest(".prod");
+    if (!row) return;
+    const id = row.dataset.id;
+    if (ev.target.closest(".p-edit")) {
+      const { data } = await db.from("produits").select("*").eq("id", id).single();
+      if (data) fillForm(data);
+    } else if (ev.target.closest(".p-toggle")) {
+      const { data } = await db.from("produits").select("actif,nom").eq("id", id).single();
+      if (!data) return;
+      const { error } = await db.from("produits").update({ actif: !data.actif }).eq("id", id);
+      if (error) { toast("Erreur", "ko"); return; }
+      await ML.logAction((data.actif ? "Désactiver" : "Activer") + " produit " + data.nom);
+      loadList();
+    }
+  });
+
+  $("saveProd").addEventListener("click", save);
+  $("cancelEdit").addEventListener("click", resetForm);
+
+  loadList().catch((e) => { console.error(e); toast("Erreur de chargement", "ko"); });
+</script>
+</body></html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demande d'avance — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .av { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line); font-size:14px; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Demande d'avance</h1>
+  <div class="ml-sub">Avance sur salaire — soumise au manager</div>
+
+  <div id="pending" class="card" style="display:none">
+    <div class="tag tag-warn">Vous avez déjà une demande en attente. Patientez sa validation avant d'en faire une autre.</div>
+  </div>
+
+  <div class="card" id="formCard">
+    <label>Montant souhaité (GNF)</label>
+    <input id="montant" type="number" min="1" placeholder="0">
+    <label>Motif (optionnel)</label>
+    <textarea id="note" rows="2" placeholder="Raison de la demande"></textarea>
+    <button class="btn" id="submit">Envoyer la demande</button>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Mes demandes</h2>
+    <div id="list">Chargement…</div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["staff", "caissier", "chicha", "achats", "manager"])) throw new Error("non autorisé");
+
+  const meId = ML.getExtra().employe_id || null;
+
+  async function load(){
+    if (!meId){ $("formCard").style.display="none"; $("list").innerHTML=`<p class="muted">Compte sans gestion d'avances.</p>`; return; }
+    const { data:av } = await db.from("avances").select("*").eq("employe_id", meId).order("date",{ascending:false});
+    const list = av||[];
+    const hasPending = list.some(a=>a.statut==="en_attente");
+    $("pending").style.display = hasPending ? "" : "none";
+    $("formCard").style.display = hasPending ? "none" : "";
+    $("list").innerHTML = list.length ? list.map(a=>`
+      <div class="av"><span>${escHtml(frDateShort(a.date))} — ${gnf(a.montant)}${a.note_demande?` · ${escHtml(a.note_demande)}`:""}</span>
+        <span class="tag ${a.statut==="approuvee"?"tag-ok":a.statut==="rejetee"?"tag-ko":"tag-warn"}">${escHtml(a.statut)}</span></div>`).join("")
+      : `<p class="muted">Aucune demande.</p>`;
+  }
+
+  $("submit").addEventListener("click", async ()=>{
+    if (!meId) return;
+    const montant = Math.round(Number($("montant").value)||0);
+    if (!(montant>0)){ toast("Montant invalide","ko"); return; }
+    // Anti-doublon : règle 4
+    const { data:ex } = await db.from("avances").select("id").eq("employe_id",meId).eq("statut","en_attente").limit(1);
+    if (ex && ex.length){ toast("Vous avez déjà une demande en attente","ko"); load(); return; }
+    const { error } = await db.from("avances").insert({
+      employe_id: meId, montant, date: todayISO(), statut: "en_attente",
+      note_demande: $("note").value.trim()||null,
+    });
+    if (error){ toast("Erreur","ko"); console.error(error); return; }
+    await ML.logAction("Demande d'avance "+gnf(montant));
+    $("montant").value=""; $("note").value="";
+    toast("Demande envoyée","ok");
+    load();
+  });
+
+  load().catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+</script>
+</body></html>

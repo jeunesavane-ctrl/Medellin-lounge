@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chicha — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .so { display:grid; grid-template-columns:1fr auto auto auto; gap:8px; align-items:center;
+        padding:10px 0; border-bottom:1px solid var(--line); }
+  .so .d { font-size:12px; color:var(--muted); }
+  .twoin { display:grid; grid-template-columns:2fr 1fr; gap:0 12px; }
+  .lock-banner { background:rgba(232,85,78,.12); border:1px solid var(--ko); color:var(--ko);
+                 padding:10px 14px; border-radius:10px; font-weight:600; margin-bottom:14px; }
+  .info { background:rgba(224,161,58,.10); border:1px solid var(--warn); color:var(--warn);
+          padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:12px; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Sorties chicha</h1>
+  <div class="ml-sub" id="sub"></div>
+  <div class="info">📦 Inventaire stock uniquement — n'entre jamais dans les calculs financiers.</div>
+  <div id="lockBanner" class="lock-banner" style="display:none">🔒 Caisse clôturée — saisie fermée</div>
+
+  <div class="card" id="formCard">
+    <h2 style="margin-top:0">Nouvelle sortie</h2>
+    <div class="twoin">
+      <div>
+        <label>Arôme</label>
+        <input id="cArome" list="aromeList" placeholder="Ex : Pomme, Menthe…">
+        <datalist id="aromeList"></datalist>
+      </div>
+      <div><label>Quantité</label><input id="cQty" type="number" min="1" value="1"></div>
+    </div>
+    <button class="btn" id="addSortie">Enregistrer la sortie</button>
+  </div>
+
+  <div class="card">
+    <div class="row between">
+      <h2 style="margin:0">Sorties du jour</h2>
+      <b class="gold" id="totalQty">0</b>
+    </div>
+    <div id="list" class="mt">Chargement…</div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["chicha", "manager", "owner"])) throw new Error("non autorisé");
+
+  const role = ML.getRole();
+  const meId = ML.getExtra().employe_id || null;
+  const canValidate = role === "manager" || role === "owner";
+  const st = { session:null, sorties:[], chichaProds:[], empMap:{} };
+  const locked = () => !st.session || st.session.statut !== "ouvert";
+
+  async function ensureSession(){
+    let { data, error } = await db.from("sessions_caisse").insert({ date: todayISO() }).select().single();
+    if (error && error.code === "23505") ({ data } = await db.from("sessions_caisse").select("*").eq("date", todayISO()).single());
+    else if (error) throw error;
+    return data;
+  }
+
+  async function load(){
+    st.session = await ensureSession();
+    const [{ data:prods }, { data:emps }] = await Promise.all([
+      db.from("produits").select("id,nom,stock_actuel").eq("type","chicha").not("actif","is",false).order("nom"),
+      db.from("employes").select("id,prenom,nom"),
+    ]);
+    st.chichaProds = prods || [];
+    (emps||[]).forEach(e=>st.empMap[e.id]=((e.prenom?e.prenom+" ":"")+(e.nom||"")).trim());
+    $("aromeList").innerHTML = st.chichaProds.map(p=>`<option value="${escHtml(p.nom)}">`).join("");
+    $("sub").textContent = frDate(todayISO()) + " · " + (locked() ? "caisse clôturée" : "caisse ouverte");
+    $("lockBanner").style.display = locked() ? "" : "none";
+    if (locked()) document.querySelectorAll("#formCard input, #formCard button").forEach(el=>el.disabled=true);
+    await loadSorties();
+  }
+
+  async function loadSorties(){
+    const { data } = await db.from("sorties_chicha").select("*").eq("session_id", st.session.id).order("created_at");
+    st.sorties = data || [];
+    $("totalQty").textContent = st.sorties.reduce((a,s)=>a+(s.qty||0),0) + " chicha";
+    const el = $("list");
+    if (!st.sorties.length){ el.innerHTML = `<p class="muted">Aucune sortie enregistrée.</p>`; return; }
+    el.innerHTML = st.sorties.map(s=>`
+      <div class="so" data-id="${escHtml(s.id)}">
+        <div><div style="font-weight:600">${escHtml(s.arome || "—")} ×${s.qty}</div>
+          <div class="d">${escHtml(st.empMap[s.employe_id] || "")}</div></div>
+        <span class="tag ${s.valide ? "tag-ok" : "tag-muted"}">${s.valide ? "Validé" : "En attente"}</span>
+        ${canValidate && !locked() ? `<button class="btn btn-sm btn-ghost s-val">${s.valide ? "Dévalider" : "Valider"}</button>` : "<span></span>"}
+        ${locked() ? "<span></span>" : `<button class="btn btn-sm btn-ghost s-del">✕</button>`}
+      </div>`).join("");
+  }
+
+  $("addSortie").addEventListener("click", async ()=>{
+    if (locked()) return;
+    const arome = $("cArome").value.trim();
+    const qty = Math.max(1, Math.round(Number($("cQty").value) || 1));
+    if (!arome){ toast("Indique l'arôme", "ko"); return; }
+    const { error } = await db.from("sorties_chicha").insert({
+      session_id: st.session.id, employe_id: meId, arome, qty, valide: false,
+    });
+    if (error){ toast("Erreur", "ko"); console.error(error); return; }
+    // Décrément du stock chicha si l'arôme correspond à un produit
+    const prod = st.chichaProds.find(p=>p.nom.toLowerCase() === arome.toLowerCase());
+    if (prod){
+      const nv = (Number(prod.stock_actuel)||0) - qty;
+      await db.from("produits").update({ stock_actuel: nv }).eq("id", prod.id);
+      prod.stock_actuel = nv;
+    }
+    await ML.logAction(`Sortie chicha ${arome} ×${qty}`);
+    $("cArome").value = ""; $("cQty").value = 1;
+    toast("Sortie enregistrée", "ok");
+    loadSorties();
+  });
+
+  $("list").addEventListener("click", async (ev)=>{
+    const row = ev.target.closest(".so"); if(!row) return; const id = row.dataset.id;
+    if (ev.target.closest(".s-del")){
+      if (!confirm("Supprimer cette sortie ?")) return;
+      const { error } = await db.from("sorties_chicha").delete().eq("id", id);
+      if (error){ toast("Erreur", "ko"); return; }
+      await ML.logAction("Suppression sortie chicha"); toast("Supprimé", "ok"); loadSorties();
+    } else if (ev.target.closest(".s-val")){
+      const cur = st.sorties.find(s=>s.id===id);
+      const { error } = await db.from("sorties_chicha").update({ valide: !cur.valide }).eq("id", id);
+      if (error){ toast("Erreur", "ko"); return; }
+      await ML.logAction("Validation sortie chicha"); loadSorties();
+    }
+  });
+
+  load().catch((e)=>{ console.error(e); toast("Erreur de chargement", "ko"); });
+</script>
+</body></html>

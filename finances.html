@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finances — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+  .tab { padding:8px 14px; border:1px solid var(--line); border-radius:999px; cursor:pointer;
+         font-weight:600; font-size:13px; color:var(--muted); background:var(--surface); }
+  .tab.active { background:var(--surface-2); color:var(--gold); border-color:var(--gold); }
+  .pane { display:none; } .pane.active { display:block; }
+  .sumrow { display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line); }
+  .sumrow.tot { border:none; font-size:18px; }
+  .sumrow.tot b { color:var(--gold); }
+  .sub2 { color:var(--muted); font-size:13px; }
+  .neg { color:var(--ko); }
+  .bars { display:flex; gap:8px; align-items:flex-end; height:160px; margin-top:10px; }
+  .bar { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end; }
+  .bar .b { width:100%; background:var(--gold); border-radius:6px 6px 0 0; min-height:2px; }
+  .bar .m { font-size:10px; color:var(--muted); }
+  .bar .v { font-size:10px; color:var(--text); }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Finances</h1>
+  <div class="row between">
+    <div class="ml-sub" id="sub"></div>
+    <input id="month" type="month" style="width:auto;margin:0">
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <section class="pane" id="pane-bilan"></section>
+  <section class="pane" id="pane-dividendes"></section>
+  <section class="pane" id="pane-tresorerie"></section>
+  <section class="pane" id="pane-evolution"></section>
+  <section class="pane" id="pane-mesparts"></section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["owner", "manager", "associe"])) throw new Error("non autorisé");
+
+  const role = ML.getRole();
+  const extra = ML.getExtra();
+  const cfg = {};
+  let assocSum = 0, associes = [];
+
+  const TABS = {
+    owner:   [["bilan","Bilan"],["dividendes","Dividendes"],["tresorerie","Trésorerie"],["evolution","Évolution"]],
+    manager: [["bilan","Bilan"],["tresorerie","Trésorerie"],["evolution","Évolution"]],
+    associe: [["mesparts","Mes Parts"]],
+  };
+
+  function monthBounds(ym){ const [y,m]=ym.split("-").map(Number); const nm=m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,"0")}`; return { start:`${ym}-01`, end:`${nm}-01` }; }
+  function partLounge(){ return Number(cfg.part_lounge ?? 10); }
+  function distribPct(){ return Math.max(0, 100 - partLounge()) / 100; }
+  function ownerPct(){ return cfg.owner_pct != null ? Number(cfg.owner_pct) : Math.max(0, 100 - assocSum); }
+
+  async function periodData(ym){
+    const { start, end } = monthBounds(ym);
+    const [{ data:raps }, { data:chg }, { data:sal }] = await Promise.all([
+      db.from("rapports").select("recettes,total_achats,net").gte("date", start).lt("date", end),
+      db.from("charges").select("montant").eq("mois", ym),
+      db.from("salaires_verses").select("net_verse").eq("mois", ym),
+    ]);
+    const recettes = (raps||[]).reduce((a,r)=>a+(r.recettes||0),0);
+    const achats   = (raps||[]).reduce((a,r)=>a+(r.total_achats||0),0);
+    const marge    = (raps||[]).reduce((a,r)=>a+(r.net||0),0);
+    const charges  = (chg||[]).reduce((a,c)=>a+(c.montant||0),0);
+    const salaires = (sal||[]).reduce((a,s)=>a+(s.net_verse||0),0);
+    return { recettes, achats, marge, charges, salaires, netForParts: marge - charges - salaires };
+  }
+
+  // ---------- BILAN ----------
+  async function renderBilan(){
+    const d = await periodData($("month").value);
+    $("pane-bilan").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">Bilan — ${escHtml(frMonth($("month").value+"-01"))}</h2>
+        <div class="sumrow tot"><span>Recettes (chicha + boissons)</span><b>${gnf(d.recettes)}</b></div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">Dépenses du mois</h2>
+        <div class="sumrow"><span>Achats (boissons, charbon…)</span><b class="neg">− ${gnf(d.achats)}</b></div>
+        <div class="sumrow"><span>Charges fixes</span><b class="neg">− ${gnf(d.charges)}</b></div>
+        <div class="sumrow"><span>Salaires versés <span class="sub2">(auto, depuis RH)</span></span><b class="neg">− ${gnf(d.salaires)}</b></div>
+        <div class="sumrow tot"><span>Total dépenses</span><b>${gnf(d.achats + d.charges + d.salaires)}</b></div>
+      </div>
+      <div class="card">
+        <div class="sumrow"><span>Marge brute (recettes − achats)</span><b>${gnf(d.marge)}</b></div>
+        <div class="sumrow tot"><span>Résultat net (base de distribution)</span><b>${gnf(d.netForParts)}</b></div>
+      </div>`;
+  }
+
+  // ---------- DIVIDENDES ----------
+  async function renderDividendes(){
+    const d = await periodData($("month").value);
+    const distribuable = Math.max(0, d.netForParts) * distribPct();
+    const retenuLounge = Math.max(0, d.netForParts) * (partLounge()/100);
+    const pOwner = distribuable * ownerPct() / 100;
+    $("pane-dividendes").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">Dividendes — ${escHtml(frMonth($("month").value+"-01"))}</h2>
+        <div class="sumrow"><span>Résultat net</span><b>${gnf(d.netForParts)}</b></div>
+        <div class="sumrow"><span>Part lounge retenue (${partLounge()}%)</span><b>${gnf(retenuLounge)}</b></div>
+        <div class="sumrow tot"><span>À distribuer</span><b>${gnf(distribuable)}</b></div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">Répartition</h2>
+        <div class="sumrow"><span>Owner (${ownerPct()}%)</span><b>${gnf(pOwner)}</b></div>
+        ${associes.map(a=>`<div class="sumrow"><span>${escHtml(((a.prenom?a.prenom+" ":"")+a.nom).trim())} (${a.pourcentage}%)</span><b>${gnf(distribuable*(Number(a.pourcentage)||0)/100)}</b></div>`).join("") || `<p class="muted">Aucun associé enregistré.</p>`}
+      </div>`;
+  }
+
+  // ---------- TRÉSORERIE ----------
+  async function renderTresorerie(){
+    const d = await periodData($("month").value);
+    const { data:av } = await db.from("avances").select("montant").in("statut",["en_attente","approuvee"]).eq("rembourse", false);
+    const avSum = (av||[]).reduce((a,x)=>a+(x.montant||0),0);
+    $("pane-tresorerie").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">Trésorerie</h2>
+        <div class="sumrow"><span>Résultat net du mois</span><b>${gnf(d.netForParts)}</b></div>
+        <div class="sumrow"><span>Avances non remboursées <span class="sub2">(toutes dates)</span></span><b class="neg">− ${gnf(avSum)}</b></div>
+        <div class="sumrow tot"><span>Trésorerie estimée</span><b>${gnf(d.netForParts - avSum)}</b></div>
+      </div>`;
+  }
+
+  // ---------- ÉVOLUTION ----------
+  async function lastMonths(n){
+    const arr=[]; const d=new Date();
+    for(let i=n-1;i>=0;i--){ const x=new Date(d.getFullYear(), d.getMonth()-i, 1); arr.push(`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`); }
+    return arr;
+  }
+  async function renderEvolution(){
+    const months = await lastMonths(6);
+    const vals = [];
+    for (const m of months){ const d = await periodData(m); vals.push({ m, net: d.netForParts }); }
+    const max = Math.max(1, ...vals.map(v=>Math.abs(v.net)));
+    $("pane-evolution").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">Évolution du résultat net (6 mois)</h2>
+        <div class="bars">
+          ${vals.map(v=>`<div class="bar">
+            <div class="v">${v.net?Math.round(v.net/1000)+"k":""}</div>
+            <div class="b" style="height:${Math.max(2, Math.abs(v.net)/max*120)}px;${v.net<0?"background:var(--ko)":""}"></div>
+            <div class="m">${escHtml(frMonth(v.m+"-01").slice(0,3))}</div>
+          </div>`).join("")}
+        </div>
+      </div>`;
+  }
+
+  // ---------- MES PARTS (associé) ----------
+  async function renderMesParts(){
+    const months = await lastMonths(6);
+    const pct = Number(extra.pourcentage)||0;
+    let rows = "";
+    for (const m of months){
+      const d = await periodData(m);
+      const part = Math.max(0, d.netForParts) * distribPct() * pct / 100;
+      rows += `<div class="sumrow"><span>${escHtml(frMonth(m+"-01"))}</span><b>${gnf(part)}</b></div>`;
+    }
+    $("pane-mesparts").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">Mes parts — ${escHtml(extra.nom||"")} (${pct}%)</h2>
+        <p class="sub2">Part = résultat net × ${Math.round(distribPct()*100)}% (après part lounge) × ${pct}%.</p>
+        ${rows}
+      </div>`;
+  }
+
+  const RENDER = { bilan:renderBilan, dividendes:renderDividendes, tresorerie:renderTresorerie, evolution:renderEvolution, mesparts:renderMesParts };
+  let curTab = null;
+  function show(tab){
+    curTab = tab;
+    document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active", t.dataset.tab===tab));
+    document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("active", p.id==="pane-"+tab));
+    RENDER[tab]();
+  }
+
+  async function init(){
+    const [{ data:cfgRows }, { data:assoc }] = await Promise.all([
+      db.from("config").select("key,value"),
+      db.from("associes").select("nom,prenom,pourcentage").not("actif","is",false),
+    ]);
+    (cfgRows||[]).forEach(r=>cfg[r.key]=r.value);
+    associes = assoc||[];
+    assocSum = associes.reduce((a,x)=>a+(Number(x.pourcentage)||0),0);
+
+    const tabs = TABS[role] || [];
+    $("tabs").innerHTML = tabs.map((t,i)=>`<div class="tab${i===0?" active":""}" data-tab="${t[0]}">${escHtml(t[1])}</div>`).join("");
+    $("tabs").addEventListener("click",(ev)=>{ const t=ev.target.closest(".tab"); if(t) show(t.dataset.tab); });
+    $("month").value = todayISO().slice(0,7);
+    $("month").addEventListener("change",()=>{ if(curTab) RENDER[curTab](); });
+    if (tabs.length) show(tabs[0][0]);
+  }
+
+  init().catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+</script>
+</body></html>

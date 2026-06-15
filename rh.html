@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RH — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+  .tab { padding:8px 14px; border:1px solid var(--line); border-radius:999px; cursor:pointer;
+         font-weight:600; font-size:13px; color:var(--muted); background:var(--surface); }
+  .tab.active { background:var(--surface-2); color:var(--gold); border-color:var(--gold); }
+  .pane { display:none; }
+  .pane.active { display:block; }
+  .emp { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center;
+         padding:10px 0; border-bottom:1px solid var(--line); }
+  .emp.off { opacity:.55; }
+  .emp .meta { font-size:12px; color:var(--muted); margin-top:2px; }
+  .pres-row, .pay-row { padding:10px 0; border-bottom:1px solid var(--line); }
+  .pres-row select { margin:6px 0 0; }
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; }
+  .form-grid .full { grid-column:1/-1; }
+  .req { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center;
+         padding:10px 0; border-bottom:1px solid var(--line); }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Ressources humaines</h1>
+  <div class="ml-sub">Équipe, présences, demandes, avances et paie</div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-pane="equipe">Équipe</div>
+    <div class="tab" data-pane="presences">Présences</div>
+    <div class="tab" data-pane="demandes">Demandes</div>
+    <div class="tab" data-pane="avances">Avances</div>
+    <div class="tab" data-pane="paie">Paie</div>
+  </div>
+
+  <!-- ===================== ÉQUIPE ===================== -->
+  <section class="pane active" id="pane-equipe">
+    <div class="card">
+      <h2 style="margin-top:0" id="empFormTitle">Ajouter un employé</h2>
+      <div id="empEditBanner" class="tag tag-warn mb" style="display:none">Modification en cours</div>
+      <div class="form-grid">
+        <div><label>Prénom</label><input id="ePrenom" type="text"></div>
+        <div><label>Nom</label><input id="eNom" type="text"></div>
+        <div><label>Poste</label><input id="ePoste" type="text" placeholder="Ex : Serveuse"></div>
+        <div><label>Rôle</label>
+          <select id="eRole">
+            <option value="staff">Staff (serveuse)</option>
+            <option value="caissier">Caissier</option>
+            <option value="chicha">Chicha</option>
+            <option value="achats">Achats</option>
+            <option value="manager">Manager</option>
+          </select>
+        </div>
+        <div><label>Salaire de base (GNF)</label><input id="eSalaire" type="number" min="0" placeholder="0"></div>
+        <div><label>PIN (4 chiffres min)</label><input id="ePin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="saveEmp">Enregistrer</button>
+        <button class="btn btn-ghost" id="cancelEmp" style="display:none">Annuler</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">Équipe</h2>
+      <div id="empList">Chargement…</div>
+    </div>
+  </section>
+
+  <!-- ===================== PRÉSENCES ===================== -->
+  <section class="pane" id="pane-presences">
+    <div class="card">
+      <div class="row between">
+        <h2 style="margin-top:0">Présences</h2>
+        <input id="presDate" type="date" style="width:auto;margin:0">
+      </div>
+      <button class="btn btn-ghost btn-sm mt" id="allPresent">Tous présents</button>
+      <div id="presList" class="mt">Chargement…</div>
+      <button class="btn mt" id="savePres">Enregistrer les présences</button>
+    </div>
+  </section>
+
+  <!-- ===================== DEMANDES ===================== -->
+  <section class="pane" id="pane-demandes">
+    <div class="card">
+      <h2 style="margin-top:0">Avances en attente</h2>
+      <div id="reqAvances">Chargement…</div>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">Justifications en attente</h2>
+      <div id="reqJustifs">Chargement…</div>
+    </div>
+  </section>
+
+  <!-- ===================== AVANCES ===================== -->
+  <section class="pane" id="pane-avances">
+    <div class="card">
+      <h2 style="margin-top:0">Accorder une avance</h2>
+      <label>Employé</label>
+      <select id="avEmp"></select>
+      <label>Montant (GNF)</label>
+      <input id="avMontant" type="number" min="1" placeholder="0">
+      <label>Observation</label>
+      <input id="avObs" type="text" placeholder="Optionnel">
+      <button class="btn" id="addAvance">Accorder (approuvée)</button>
+    </div>
+  </section>
+
+  <!-- ===================== PAIE ===================== -->
+  <section class="pane" id="pane-paie">
+    <div class="card">
+      <div class="row between">
+        <h2 style="margin-top:0">Paie</h2>
+        <input id="payMonth" type="month" style="width:auto;margin:0">
+      </div>
+      <div id="payList" class="mt">Chargement…</div>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["manager", "owner"])) throw new Error("non autorisé");
+
+  const ROLE_LBL = { staff:"Staff", caissier:"Caissier", chicha:"Chicha", achats:"Achats", manager:"Manager" };
+  const PRES_STATUTS = [["present","Présent"],["absent","Absent"],["retard","Retard"],["conge","Congé"]];
+  let empEditId = null;
+  const fullName = (e) => ((e.prenom ? e.prenom + " " : "") + (e.nom||"")).trim();
+  function monthBounds(ym){ const [y,m]=ym.split("-").map(Number); const nm = m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,"0")}`; return { start:`${ym}-01`, end:`${nm}-01` }; }
+
+  // ---------- Onglets ----------
+  $("tabs").addEventListener("click",(ev)=>{
+    const t=ev.target.closest(".tab"); if(!t) return;
+    document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===t));
+    const pane=t.dataset.pane;
+    document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("active",p.id==="pane-"+pane));
+    if(pane==="presences") loadPresences();
+    if(pane==="demandes") loadDemandes();
+    if(pane==="avances") fillAvanceEmps();
+    if(pane==="paie") loadPaie();
+  });
+
+  // ===================== ÉQUIPE =====================
+  async function loadEmployes(){
+    const {data}=await db.from("employes").select("*").order("actif",{ascending:false}).order("nom");
+    const el=$("empList");
+    if(!data||!data.length){ el.innerHTML=`<p class="muted">Aucun employé. Ajoute le premier ci-dessus.</p>`; return; }
+    el.innerHTML=data.map(e=>`
+      <div class="emp${e.actif?"":" off"}" data-id="${escHtml(e.id)}">
+        <div>
+          <div style="font-weight:700">${escHtml(fullName(e))}</div>
+          <div class="meta">${escHtml(ROLE_LBL[e.role]||e.role)}${e.poste?" · "+escHtml(e.poste):""} · ${gnf(e.salaire_base||0)}${e.actif?"":' · <span class="tag tag-muted">Inactif</span>'}</div>
+        </div>
+        <div class="actions" style="display:flex;gap:6px">
+          <button class="btn btn-sm btn-ghost e-edit">Modifier</button>
+          <button class="btn btn-sm btn-ghost e-toggle">${e.actif?"Désactiver":"Activer"}</button>
+        </div>
+      </div>`).join("");
+  }
+
+  function fillEmpForm(e){
+    empEditId=e.id;
+    $("ePrenom").value=e.prenom||""; $("eNom").value=e.nom||""; $("ePoste").value=e.poste||"";
+    $("eRole").value=e.role||"staff"; $("eSalaire").value=e.salaire_base??""; $("ePin").value="";
+    $("ePin").placeholder="Laisser vide = inchangé";
+    $("empFormTitle").textContent="Modifier : "+fullName(e);
+    $("empEditBanner").style.display=""; $("saveEmp").textContent="Mettre à jour"; $("cancelEmp").style.display="";
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+  function resetEmpForm(){
+    empEditId=null;
+    ["ePrenom","eNom","ePoste","eSalaire","ePin"].forEach(id=>$(id).value="");
+    $("eRole").value="staff"; $("ePin").placeholder="••••";
+    $("empFormTitle").textContent="Ajouter un employé";
+    $("empEditBanner").style.display="none"; $("saveEmp").textContent="Enregistrer"; $("cancelEmp").style.display="none";
+  }
+
+  async function saveEmp(){
+    const nom=$("eNom").value.trim();
+    if(!nom){ toast("Nom requis","ko"); return; }
+    const pin=$("ePin").value.trim();
+    const rec={
+      prenom:$("ePrenom").value.trim()||null, nom,
+      poste:$("ePoste").value.trim()||null, role:$("eRole").value,
+      salaire_base:Math.round(Number($("eSalaire").value)||0),
+    };
+    if(pin){ if(!/^\d{4,}$/.test(pin)){ toast("PIN : 4 chiffres minimum","ko"); return; } rec.pin_hash=await sha256(pin); }
+    let error;
+    if(empEditId){ ({error}=await db.from("employes").update(rec).eq("id",empEditId)); }
+    else {
+      if(!pin){ toast("PIN requis pour un nouvel employé","ko"); return; }
+      ({error}=await db.from("employes").insert(rec));
+    }
+    if(error){ toast("Erreur d'enregistrement","ko"); console.error(error); return; }
+    await ML.logAction((empEditId?"MAJ employé ":"Ajout employé ")+nom);
+    toast(empEditId?"Employé mis à jour":"Employé ajouté","ok");
+    resetEmpForm(); loadEmployes();
+  }
+
+  $("empList").addEventListener("click",async(ev)=>{
+    const row=ev.target.closest(".emp"); if(!row) return; const id=row.dataset.id;
+    if(ev.target.closest(".e-edit")){
+      const {data}=await db.from("employes").select("*").eq("id",id).single();
+      if(data) fillEmpForm(data);
+    } else if(ev.target.closest(".e-toggle")){
+      const {data}=await db.from("employes").select("actif,nom").eq("id",id).single();
+      if(!data) return;
+      const {error}=await db.from("employes").update({actif:!data.actif}).eq("id",id);
+      if(error){ toast("Erreur","ko"); return; }
+      await ML.logAction((data.actif?"Désactiver":"Activer")+" employé "+data.nom);
+      loadEmployes();
+    }
+  });
+  $("saveEmp").addEventListener("click",saveEmp);
+  $("cancelEmp").addEventListener("click",resetEmpForm);
+
+  // ===================== PRÉSENCES =====================
+  async function loadPresences(){
+    if(!$("presDate").value) $("presDate").value=todayISO();
+    const date=$("presDate").value;
+    const [{data:emps},{data:pres}]=await Promise.all([
+      db.from("employes").select("id,nom,prenom").not("actif","is",false).order("nom"),
+      db.from("presences").select("employe_id,statut").eq("date",date),
+    ]);
+    const map={}; (pres||[]).forEach(p=>map[p.employe_id]=p.statut);
+    const el=$("presList");
+    if(!emps||!emps.length){ el.innerHTML=`<p class="muted">Aucun employé actif.</p>`; return; }
+    el.innerHTML=emps.map(e=>`
+      <div class="pres-row" data-id="${escHtml(e.id)}">
+        <div style="font-weight:600">${escHtml(fullName(e))}</div>
+        <select class="pres-sel">
+          ${PRES_STATUTS.map(([v,l])=>`<option value="${v}"${map[e.id]===v?" selected":""}>${l}</option>`).join("")}
+        </select>
+      </div>`).join("");
+  }
+  $("presDate").addEventListener("change",loadPresences);
+  $("allPresent").addEventListener("click",()=>{ document.querySelectorAll(".pres-sel").forEach(s=>s.value="present"); });
+  $("savePres").addEventListener("click",async()=>{
+    const date=$("presDate").value; if(!date){ toast("Choisir une date","ko"); return; }
+    const rows=[...document.querySelectorAll(".pres-row")].map(r=>({
+      employe_id:r.dataset.id, date, statut:r.querySelector(".pres-sel").value,
+    }));
+    if(!rows.length){ toast("Rien à enregistrer",""); return; }
+    const {error}=await db.from("presences").upsert(rows,{onConflict:"employe_id,date"});
+    if(error){ toast("Erreur","ko"); console.error(error); return; }
+    await ML.logAction("Présences du "+date);
+    toast("Présences enregistrées","ok");
+  });
+
+  // ===================== DEMANDES =====================
+  async function loadDemandes(){
+    const empMap=await empNameMap();
+    const {data:av}=await db.from("avances").select("*").eq("statut","en_attente").order("date",{ascending:false});
+    $("reqAvances").innerHTML=(!av||!av.length)?`<p class="muted">Aucune avance en attente.</p>`:
+      av.map(a=>`
+        <div class="req" data-id="${escHtml(a.id)}" data-kind="avance">
+          <div><div style="font-weight:600">${escHtml(empMap[a.employe_id]||"?")} — ${gnf(a.montant)}</div>
+          <div class="meta" style="font-size:12px;color:var(--muted)">${escHtml(a.note_demande||"")}</div></div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sm r-ok">Approuver</button>
+            <button class="btn btn-sm btn-ghost r-no">Rejeter</button>
+          </div>
+        </div>`).join("");
+    const {data:ju}=await db.from("justifications").select("*").eq("statut","en_attente").order("date",{ascending:false});
+    $("reqJustifs").innerHTML=(!ju||!ju.length)?`<p class="muted">Aucune justification en attente.</p>`:
+      ju.map(j=>`
+        <div class="req" data-id="${escHtml(j.id)}" data-kind="justif">
+          <div><div style="font-weight:600">${escHtml(empMap[j.employe_id]||"?")} — ${escHtml(j.type)}</div>
+          <div class="meta" style="font-size:12px;color:var(--muted)">${escHtml(frDateShort(j.date))} · ${escHtml(j.motif||"")}</div></div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sm r-ok">Approuver</button>
+            <button class="btn btn-sm btn-ghost r-no">Rejeter</button>
+          </div>
+        </div>`).join("");
+  }
+  async function handleReq(ev){
+    const ok=ev.target.closest(".r-ok"), no=ev.target.closest(".r-no");
+    if(!ok&&!no) return;
+    const row=ev.target.closest(".req"); const id=row.dataset.id; const kind=row.dataset.kind;
+    const table=kind==="avance"?"avances":"justifications";
+    const statut=ok?"approuvee":"rejetee";
+    const {error}=await db.from(table).update({statut}).eq("id",id);
+    if(error){ toast("Erreur","ko"); return; }
+    await ML.logAction(kind+" "+statut); toast(ok?"Approuvé":"Rejeté","ok"); loadDemandes();
+  }
+  $("reqAvances").addEventListener("click",handleReq);
+  $("reqJustifs").addEventListener("click",handleReq);
+
+  // ===================== AVANCES =====================
+  async function empNameMap(){
+    const {data}=await db.from("employes").select("id,nom,prenom");
+    const m={}; (data||[]).forEach(e=>m[e.id]=fullName(e)); return m;
+  }
+  async function fillAvanceEmps(){
+    const {data}=await db.from("employes").select("id,nom,prenom").not("actif","is",false).order("nom");
+    $("avEmp").innerHTML=(data||[]).map(e=>`<option value="${escHtml(e.id)}">${escHtml(fullName(e))}</option>`).join("");
+  }
+  $("addAvance").addEventListener("click",async()=>{
+    const employe_id=$("avEmp").value; const montant=Math.round(Number($("avMontant").value)||0);
+    if(!employe_id){ toast("Choisir un employé","ko"); return; }
+    if(!(montant>0)){ toast("Montant invalide","ko"); return; }
+    const {error}=await db.from("avances").insert({employe_id,montant,date:todayISO(),statut:"approuvee",obs:$("avObs").value.trim()||null});
+    if(error){ toast("Erreur","ko"); console.error(error); return; }
+    await ML.logAction("Avance accordée "+gnf(montant));
+    $("avMontant").value=""; $("avObs").value="";
+    toast("Avance accordée","ok");
+  });
+
+  // ===================== PAIE =====================
+  async function ecartsMois(emp,ym){
+    const {start,end}=monthBounds(ym);
+    const {data:sessions}=await db.from("sessions_caisse").select("id,ecart,ecart_especes,caissier_id").gte("date",start).lt("date",end);
+    let dette=0,surplus=0;
+    for(const s of (sessions||[])){
+      if(emp.role==="caissier"){
+        if(s.caissier_id===emp.id){ const e=s.ecart||0; if(e>0) dette+=e; else surplus+=(-e); } // OM compté : écart total
+      } else {
+        const {data:vs}=await db.from("ventes_session").select("total").eq("session_id",s.id).eq("employe_id",emp.id).in("paiement",["especes","om"]);
+        const decl=(vs||[]).reduce((a,v)=>a+(v.total||0),0);
+        const {data:vf}=await db.from("verifications_staff").select("recu_especes,recu_om").eq("session_id",s.id).eq("employe_id",emp.id).maybeSingle();
+        const recu=vf?((vf.recu_especes||0)+(vf.recu_om||0)):0;
+        if(!vs||!vs.length){ continue; }
+        const e=decl-recu; if(e>0) dette+=e; else surplus+=(-e);
+      }
+    }
+    const {data:remb}=await db.from("remboursements_ecart").select("montant").eq("employe_id",emp.id).eq("statut","valide").gte("created_at",start).lt("created_at",end);
+    const rembSum=(remb||[]).reduce((a,r)=>a+(r.montant||0),0);
+    return { dette:Math.max(0,dette-rembSum), surplus };
+  }
+  async function calcSalaire(emp,ym){
+    const {start,end}=monthBounds(ym);
+    const brut=emp.salaire_base||0;
+    const {data:pres}=await db.from("presences").select("statut").eq("employe_id",emp.id).gte("date",start).lt("date",end);
+    const absC=(pres||[]).filter(p=>p.statut==="absent").length;
+    const retC=(pres||[]).filter(p=>p.statut==="retard").length;
+    const {data:just}=await db.from("justifications").select("id").eq("employe_id",emp.id).eq("type","absence").eq("statut","approuvee").gte("date",start).lt("date",end);
+    const absNJ=absC-((just||[]).length);
+    let sancAbs=0; if(absNJ===2) sancAbs=Math.round(brut*0.10); else if(absNJ>=3) sancAbs=Math.round(brut*0.15);
+    const sancRet=retC>=5?Math.round(brut*0.10):0;
+    const {data:av}=await db.from("avances").select("montant").eq("employe_id",emp.id).eq("statut","approuvee").eq("rembourse",false);
+    const avancesDed=(av||[]).reduce((a,r)=>a+(r.montant||0),0);
+    const {dette,surplus}=await ecartsMois(emp,ym);
+    const net=Math.max(0, brut - sancAbs - sancRet - avancesDed - dette + surplus);
+    return { brut, absNJ, sancAbs, retC, sancRet, avancesDed, ecartsDed:dette, surplus, net };
+  }
+  async function loadPaie(){
+    if(!$("payMonth").value) $("payMonth").value=todayISO().slice(0,7);
+    const ym=$("payMonth").value;
+    const {data:emps}=await db.from("employes").select("*").not("actif","is",false).order("nom");
+    const {data:verses}=await db.from("salaires_verses").select("employe_id,net_verse").eq("mois",ym);
+    const versesMap={}; (verses||[]).forEach(v=>versesMap[v.employe_id]=v.net_verse);
+    const el=$("payList");
+    if(!emps||!emps.length){ el.innerHTML=`<p class="muted">Aucun employé actif.</p>`; return; }
+    el.innerHTML=`<p class="muted">Calcul…</p>`;
+    let html="";
+    for(const e of emps){
+      const s=await calcSalaire(e,ym);
+      const paye=versesMap[e.id]!==undefined;
+      html+=`
+        <div class="pay-row" data-id="${escHtml(e.id)}">
+          <div class="row between"><div style="font-weight:700">${escHtml(fullName(e))}</div>
+            <div style="font-weight:800;color:var(--gold)">${gnf(paye?versesMap[e.id]:s.net)}</div></div>
+          <div class="meta" style="font-size:12px;color:var(--muted)">
+            Brut ${gnf(s.brut)} · Avances −${gnf(s.avancesDed)} · Sanctions −${gnf(s.sancAbs+s.sancRet)} · Écarts −${gnf(s.ecartsDed)}${s.surplus?` · Bonus +${gnf(s.surplus)}`:""}
+          </div>
+          <div class="mt">
+            ${paye
+              ? `<span class="tag tag-ok">Payé</span> <button class="btn btn-sm btn-ghost pay-cancel">Annuler</button>`
+              : `<button class="btn btn-sm pay-do">Verser ${gnf(s.net)}</button>`}
+          </div>
+        </div>`;
+    }
+    el.innerHTML=html;
+  }
+  $("payMonth").addEventListener("change",loadPaie);
+  $("payList").addEventListener("click",async(ev)=>{
+    const ym=$("payMonth").value;
+    const row=ev.target.closest(".pay-row"); if(!row) return; const id=row.dataset.id;
+    if(ev.target.closest(".pay-do")){
+      const {data:e}=await db.from("employes").select("*").eq("id",id).single();
+      const s=await calcSalaire(e,ym);
+      const {error}=await db.from("salaires_verses").insert({
+        employe_id:id, mois:ym, salaire_brut:s.brut, avances_deduites:s.avancesDed,
+        ecarts_deduits:s.ecartsDed, surplus_caisse:s.surplus, net_verse:s.net,
+        nb_absences_nj:s.absNJ, sanction_type:(s.sancAbs?"absence":(s.sancRet?"retard":null)),
+        sanction_montant:s.sancAbs, nb_retards:s.retC, sanction_retard_montant:s.sancRet, paye_le:todayISO(),
+      });
+      if(error){ toast(error.code==="23505"?"Déjà payé ce mois":"Erreur","ko"); return; }
+      await db.from("avances").update({rembourse:true}).eq("employe_id",id).eq("statut","approuvee").eq("rembourse",false);
+      await ML.logAction("Salaire versé "+ym); toast("Salaire versé","ok"); loadPaie();
+    } else if(ev.target.closest(".pay-cancel")){
+      const {error}=await db.from("salaires_verses").delete().eq("employe_id",id).eq("mois",ym);
+      if(error){ toast("Erreur","ko"); return; }
+      await db.from("avances").update({rembourse:false}).eq("employe_id",id).eq("statut","approuvee").eq("rembourse",true);
+      await ML.logAction("Annulation salaire "+ym); toast("Versement annulé","ok"); loadPaie();
+    }
+  });
+
+  loadEmployes().catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+
+  // Ouverture d'un onglet via l'URL (#presences, #demandes, #avances, #paie) — pour les raccourcis
+  (function openFromHash(){
+    const h = (location.hash||"").replace("#","");
+    const t = h && document.querySelector(`.tab[data-pane="${h}"]`);
+    if (t) t.click();
+  })();
+</script>
+</body></html>

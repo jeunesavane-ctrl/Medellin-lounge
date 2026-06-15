@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tableau de bord — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <div class="hero">
+    <h1 id="greet">Tableau de bord</h1>
+    <div class="hsub" id="todayLbl"></div>
+  </div>
+
+  <!-- KPIs du jour (owner / manager) -->
+  <div class="grid grid-3" id="kpis" hidden>
+    <div class="card kpi"><div class="ic"><i class="ti ti-cash"></i></div><div class="meta"><div class="val" id="kRecettes">—</div><div class="lbl">Recettes du jour</div></div></div>
+    <div class="card kpi"><div class="ic"><i class="ti ti-trending-up"></i></div><div class="meta"><div class="val" id="kNet">—</div><div class="lbl">Net du jour</div></div></div>
+    <div class="card kpi"><div class="ic"><i class="ti ti-target"></i></div><div class="meta"><div class="val" id="kObjectif">—</div><div class="lbl">Objectif</div></div></div>
+  </div>
+
+  <!-- Session du jour -->
+  <div class="card" id="sessionCard" hidden>
+    <div class="row between">
+      <h2 style="margin:0">Session du jour</h2>
+      <span id="sessTag" class="tag tag-muted">—</span>
+    </div>
+    <div id="sessInfo" class="muted mt">Chargement…</div>
+  </div>
+
+  <!-- Sessions en attente de validation (manager / owner) -->
+  <div class="card" id="pendingCard" hidden>
+    <h2 style="margin-top:0">À valider</h2>
+    <div id="pendingList"></div>
+  </div>
+
+  <!-- Vue associé -->
+  <div class="card" id="associeCard" hidden>
+    <h2 style="margin-top:0">Espace associé</h2>
+    <p class="muted">Bienvenue. Consultez vos parts et le bilan dans les sections
+      <a class="gold" href="finances.html">Finances</a> et
+      <a class="gold" href="bilan.html">Bilan</a>.</p>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["manager", "owner", "associe"])) throw new Error("non autorisé");
+
+  const role = ML.getRole();
+  const extra = ML.getExtra();
+  let _sub = null;
+
+  const SESS_TAGS = {
+    ouvert:          ["Ouverte", "tag-warn"],
+    valide_caissier: ["Clôturée caissière", "tag-warn"],
+    valide_manager:  ["Validée", "tag-ok"],
+  };
+
+  async function init() {
+    $("greet").textContent = "Bonjour " + (extra.nom || "");
+    $("todayLbl").textContent = frDate(todayISO());
+
+    if (role === "associe") {
+      $("associeCard").hidden = false;
+      return;
+    }
+
+    // owner / manager
+    $("kpis").hidden = false;
+    $("sessionCard").hidden = false;
+    $("pendingCard").hidden = false;
+
+    await Promise.all([loadKpis(), loadSession(), loadPending()]);
+    subscribeRealtime();
+  }
+
+  async function loadKpis() {
+    const today = todayISO();
+    const { data: cfg } = await db.from("config").select("value").eq("key", "objectif_journalier").maybeSingle();
+    const obj = cfg?.value ? Number(cfg.value) : 0;
+    $("kObjectif").textContent = obj ? gnf(obj) : "—";
+
+    // Rapport validé du jour → chiffres définitifs
+    const { data: rap } = await db.from("rapports").select("recettes,net").eq("date", today).maybeSingle();
+    if (rap) {
+      $("kRecettes").textContent = gnf(rap.recettes || 0);
+      $("kNet").textContent = gnf(rap.net || 0);
+      return;
+    }
+    // Sinon → chiffres EN DIRECT depuis la session en cours
+    const { data: s } = await db.from("sessions_caisse").select("id").eq("date", today).maybeSingle();
+    if (!s) { $("kRecettes").textContent = gnf(0); $("kNet").textContent = gnf(0); return; }
+    const [{ data: v }, { data: a }] = await Promise.all([
+      db.from("ventes_session").select("total").eq("session_id", s.id),
+      db.from("achats_session").select("montant").eq("session_id", s.id),
+    ]);
+    const recettes = (v || []).reduce((x, r) => x + (r.total || 0), 0);
+    const achats = (a || []).reduce((x, r) => x + (r.montant || 0), 0);
+    $("kRecettes").textContent = gnf(recettes);
+    $("kNet").textContent = gnf(recettes - achats);
+  }
+
+  async function loadSession() {
+    const today = todayISO();
+    const { data: s } = await db
+      .from("sessions_caisse").select("*").eq("date", today).maybeSingle();
+    if (!s) {
+      $("sessTag").textContent = "Aucune";
+      $("sessTag").className = "tag tag-muted";
+      $("sessInfo").innerHTML = "Aucune session ouverte aujourd'hui.";
+      return;
+    }
+    const [lbl, cls] = SESS_TAGS[s.statut] || ["—", "tag-muted"];
+    $("sessTag").textContent = lbl;
+    $("sessTag").className = "tag " + cls;
+    $("sessInfo").innerHTML =
+      `Fond de caisse : <b>${gnf(s.fond_caisse || 0)}</b>` +
+      (s.statut !== "ouvert" ? ` · Écart espèces : <b>${gnf(s.ecart_especes || 0)}</b>` : "");
+  }
+
+  async function loadPending() {
+    const { data: list } = await db
+      .from("sessions_caisse").select("date,fond_caisse,ecart_especes")
+      .eq("statut", "valide_caissier").order("date", { ascending: false });
+    const el = $("pendingList");
+    if (!list || !list.length) {
+      el.innerHTML = `<p class="muted">Rien à valider pour le moment.</p>`;
+      return;
+    }
+    el.innerHTML = list.map((s) =>
+      `<div class="row between" style="padding:8px 0;border-bottom:1px solid var(--line)">
+         <span>${escHtml(frDate(s.date))}</span>
+         <a class="btn btn-sm" href="rapport.html?date=${escHtml(s.date)}">Valider</a>
+       </div>`
+    ).join("");
+  }
+
+  function subscribeRealtime() {
+    _sub = db.channel("dash")
+      .on("postgres_changes", { event: "*", schema: "public", table: "sessions_caisse" },
+        () => { loadSession(); loadPending(); loadKpis(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "rapports" },
+        () => { loadKpis(); loadPending(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ventes_session" },
+        () => { loadKpis(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "achats_session" },
+        () => { loadKpis(); })
+      .subscribe();
+  }
+  window.addEventListener("beforeunload", () => { if (_sub) db.removeChannel(_sub); });
+
+  init().catch((e) => { console.error(e); toast("Erreur de chargement", "ko"); });
+</script>
+</body></html>

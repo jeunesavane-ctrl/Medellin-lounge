@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caisse — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .serv { border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:12px; background:var(--surface-2); }
+  .serv h3 { margin:0 0 6px; }
+  .byt { font-size:13px; color:var(--muted); margin-bottom:8px; }
+  .decl { display:flex; gap:14px; font-size:13px; margin-bottom:8px; flex-wrap:wrap; }
+  .decl b { color:var(--text); }
+  .twoin { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .twoin input { margin-bottom:6px; }
+  .ecart-line { font-weight:700; margin-top:4px; }
+  .pos { color:var(--ko); } .neg { color:var(--ok); } .zero { color:var(--muted); }
+  .sumrow { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); }
+  .mvt { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .ro-note { background:rgba(224,161,58,.12); border:1px solid var(--warn); color:var(--warn);
+             padding:10px 14px; border-radius:10px; font-weight:600; margin-bottom:14px; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Caisse</h1>
+  <div class="ml-sub" id="sub"></div>
+  <div id="roNote" class="ro-note" style="display:none"></div>
+
+  <!-- Fond de caisse -->
+  <div class="card" id="fondCard">
+    <label>Fond de caisse du matin (GNF)</label>
+    <div class="row" style="gap:8px">
+      <input id="fond" type="number" min="0" style="margin:0">
+      <button class="btn btn-sm" id="saveFond" style="width:auto">OK</button>
+    </div>
+  </div>
+
+  <!-- Par serveuse -->
+  <div class="card">
+    <h2 style="margin-top:0">Vérification par serveuse</h2>
+    <div class="byt muted">Saisis ce que chaque serveuse t'a réellement remis. Le crédit est exclu.</div>
+    <div id="servList">Chargement…</div>
+  </div>
+
+  <!-- Mouvements de caisse -->
+  <div class="card" id="mvtCard">
+    <h2 style="margin-top:0">Mouvements de caisse</h2>
+    <div id="mvtList"></div>
+    <div class="twoin mt">
+      <select id="mvtType"><option value="entree">Entrée</option><option value="sortie">Sortie</option></select>
+      <input id="mvtMontant" type="number" min="1" placeholder="Montant">
+    </div>
+    <input id="mvtMotif" type="text" placeholder="Motif">
+    <button class="btn btn-ghost btn-sm" id="addMvt" style="width:auto">Ajouter</button>
+  </div>
+
+  <!-- Comptage & clôture -->
+  <div class="card" id="closeCard">
+    <h2 style="margin-top:0">Comptage & clôture</h2>
+
+    <div id="caissierPick" style="display:none">
+      <label>Caissière responsable</label>
+      <select id="caissierSel"></select>
+    </div>
+
+    <div class="twoin">
+      <div><label>Espèces comptées (tiroir)</label><input id="totalReel" type="number" min="0" placeholder="0"></div>
+      <div><label>OM vérifié (téléphone)</label><input id="totalOm" type="number" min="0" placeholder="0"></div>
+    </div>
+
+    <div class="card" style="background:var(--bg)">
+      <div class="sumrow"><span>Théorique espèces</span><b id="rTheo">—</b></div>
+      <div class="sumrow"><span>Écart espèces</span><b id="rEcartEsp">—</b></div>
+      <div class="sumrow"><span>Écart OM</span><b id="rEcartOm">—</b></div>
+      <div class="sumrow" style="border:none"><span>Écart total <span class="muted">(impacte la paie)</span></span><b id="rEcart">—</b></div>
+    </div>
+
+    <label>Note de clôture</label>
+    <textarea id="note" rows="2" placeholder="Optionnel"></textarea>
+    <button class="btn" id="closeBtn">Clôturer la caisse</button>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["caissier", "manager", "owner", "associe"])) throw new Error("non autorisé");
+
+  const role = ML.getRole();
+  const meId = ML.getExtra().employe_id || null;
+  const st = { session:null, ventes:[], verifs:{}, mvts:[], achats:0, empMap:{}, caissiers:[], sub:null, closing:false };
+
+  const isAssoc = role === "associe";
+  function isOpen(){ return st.session && st.session.statut === "ouvert"; }
+  function readOnly(){ return isAssoc || !isOpen(); }
+
+  async function ensureSession(){
+    let { data, error } = await db.from("sessions_caisse").insert({ date: todayISO() }).select().single();
+    if (error && error.code === "23505") ({ data } = await db.from("sessions_caisse").select("*").eq("date", todayISO()).single());
+    else if (error) throw error;
+    return data;
+  }
+
+  async function loadAll(){
+    st.session = await ensureSession();
+    const [{ data:ventes }, { data:verifs }, { data:mvts }, { data:achats }, { data:emps }] = await Promise.all([
+      db.from("ventes_session").select("*").eq("session_id", st.session.id),
+      db.from("verifications_staff").select("*").eq("session_id", st.session.id),
+      db.from("mouvements_caisse").select("*").eq("session_id", st.session.id).order("created_at"),
+      db.from("achats_session").select("montant").eq("session_id", st.session.id),
+      db.from("employes").select("id,prenom,nom,role"),
+    ]);
+    st.ventes = ventes||[]; st.mvts = mvts||[];
+    st.achats = (achats||[]).reduce((a,x)=>a+(x.montant||0),0);
+    st.verifs = {}; (verifs||[]).forEach(v=>st.verifs[v.employe_id]=v);
+    st.empMap = {}; st.caissiers = [];
+    (emps||[]).forEach(e=>{ st.empMap[e.id]=((e.prenom?e.prenom+" ":"")+(e.nom||"")).trim(); if(e.role==="caissier") st.caissiers.push(e); });
+
+    $("sub").textContent = frDate(todayISO()) + " · " + statutLabel();
+    $("fond").value = st.session.fond_caisse || 0;
+    $("totalReel").value = st.session.total_reel ?? "";
+    $("totalOm").value = st.session.total_om_verifie ?? "";
+    $("note").value = st.session.note_caissier || "";
+
+    setupReadOnly();
+    renderServeuses();
+    renderMvts();
+    setupCaissierPick();
+    recompute();
+  }
+
+  function statutLabel(){
+    return { ouvert:"Caisse ouverte", valide_caissier:"Clôturée (en attente manager)", valide_manager:"Validée" }[st.session.statut] || st.session.statut;
+  }
+
+  function setupReadOnly(){
+    const ro = readOnly();
+    if (ro){
+      $("roNote").style.display = "";
+      $("roNote").textContent = isAssoc ? "Lecture seule (associé)" : (st.session.statut!=="ouvert" ? "Caisse déjà clôturée — lecture seule" : "");
+    } else $("roNote").style.display = "none";
+    ["fondCard","mvtCard","closeCard"].forEach(id=>{ /* gardés visibles, inputs désactivés ci-dessous */ });
+    document.querySelectorAll("input,select,textarea,button").forEach(el=>{
+      if (el.closest("#ml-nav")) return;
+      if (ro && el.id!=="" ) el.disabled = true;
+    });
+    // toujours actifs : navigation (gérée), rien d'autre en read-only
+  }
+
+  // -------- Serveuses --------
+  function declFor(empId){
+    const mine = st.ventes.filter(v=>v.employe_id===empId);
+    const esp = mine.filter(v=>v.paiement==="especes").reduce((a,v)=>a+(v.total||0),0);
+    const om  = mine.filter(v=>v.paiement==="om").reduce((a,v)=>a+(v.total||0),0);
+    const cred= mine.filter(v=>v.paiement==="credit").reduce((a,v)=>a+(v.total||0),0);
+    const byTable = {};
+    mine.forEach(v=>{ byTable[v.table_label||"—"] = (byTable[v.table_label||"—"]||0)+(v.total||0); });
+    return { esp, om, cred, byTable };
+  }
+
+  function renderServeuses(){
+    const ids = [...new Set(st.ventes.map(v=>v.employe_id).filter(Boolean))];
+    const el = $("servList");
+    if (!ids.length){ el.innerHTML = `<p class="muted">Aucune vente enregistrée aujourd'hui.</p>`; return; }
+    el.innerHTML = ids.map(id=>{
+      const d = declFor(id);
+      const v = st.verifs[id] || {};
+      const tables = Object.entries(d.byTable).map(([t,m])=>`${escHtml(t)}: ${gnf(m)}`).join(" · ");
+      return `<div class="serv" data-id="${escHtml(id)}">
+        <h3>${escHtml(st.empMap[id]||"?")}</h3>
+        <div class="byt">${tables}</div>
+        <div class="decl">
+          <span>Déclaré espèces : <b>${gnf(d.esp)}</b></span>
+          <span>Déclaré OM : <b>${gnf(d.om)}</b></span>
+          ${d.cred?`<span class="muted">Crédit (exclu) : ${gnf(d.cred)}</span>`:""}
+        </div>
+        <div class="twoin">
+          <div><label>Reçu espèces</label><input class="r-esp" type="number" min="0" value="${v.recu_especes ?? ""}" placeholder="0"></div>
+          <div><label>Reçu OM</label><input class="r-om" type="number" min="0" value="${v.recu_om ?? ""}" placeholder="0"></div>
+        </div>
+        <div class="ecart-line" data-decl="${d.esp + d.om}"></div>
+      </div>`;
+    }).join("");
+    el.querySelectorAll(".serv").forEach(updateServEcart);
+    if (readOnly()) el.querySelectorAll("input").forEach(i=>i.disabled=true);
+  }
+
+  function updateServEcart(card){
+    const decl = Number(card.querySelector(".ecart-line").dataset.decl)||0;
+    const recu = (Number(card.querySelector(".r-esp").value)||0) + (Number(card.querySelector(".r-om").value)||0);
+    const e = decl - recu;
+    const l = card.querySelector(".ecart-line");
+    l.textContent = "Écart : " + gnf(e) + (e>0?" (dette)":e<0?" (excédent)":"");
+    l.className = "ecart-line " + (e>0?"pos":e<0?"neg":"zero");
+  }
+
+  $("servList").addEventListener("input",(ev)=>{
+    const card = ev.target.closest(".serv"); if(!card) return;
+    updateServEcart(card); recompute();
+  });
+  $("servList").addEventListener("change", async (ev)=>{
+    const card = ev.target.closest(".serv"); if(!card || readOnly()) return;
+    const employe_id = card.dataset.id;
+    const recu_especes = Math.round(Number(card.querySelector(".r-esp").value)||0);
+    const recu_om = Math.round(Number(card.querySelector(".r-om").value)||0);
+    const { error } = await db.from("verifications_staff").upsert(
+      { session_id: st.session.id, employe_id, recu_especes, recu_om },
+      { onConflict: "session_id,employe_id" });
+    if (error){ toast("Erreur d'enregistrement","ko"); return; }
+    st.verifs[employe_id] = { employe_id, recu_especes, recu_om };
+  });
+
+  // -------- Mouvements --------
+  function renderMvts(){
+    const el = $("mvtList");
+    if(!st.mvts.length){ el.innerHTML = `<p class="muted">Aucun mouvement.</p>`; return; }
+    el.innerHTML = st.mvts.map(m=>`
+      <div class="mvt"><span>${m.type==="entree"?"➕":"➖"} ${escHtml(m.motif||"")}</span>
+      <b class="${m.type==="entree"?"neg":"pos"}">${m.type==="entree"?"+":"−"}${gnf(m.montant)}</b></div>`).join("");
+  }
+  $("addMvt").addEventListener("click", async ()=>{
+    if (readOnly()) return;
+    const montant = Math.round(Number($("mvtMontant").value)||0);
+    if (!(montant>0)){ toast("Montant invalide","ko"); return; }
+    const rec = { session_id: st.session.id, type: $("mvtType").value, motif: $("mvtMotif").value.trim()||null, montant };
+    const { error } = await db.from("mouvements_caisse").insert(rec);
+    if (error){ toast("Erreur","ko"); return; }
+    $("mvtMontant").value=""; $("mvtMotif").value="";
+    const { data } = await db.from("mouvements_caisse").select("*").eq("session_id", st.session.id).order("created_at");
+    st.mvts = data||[]; renderMvts(); recompute();
+  });
+
+  // -------- Caissière responsable --------
+  function setupCaissierPick(){
+    if (role==="caissier"){ $("caissierPick").style.display="none"; return; }
+    if (isAssoc){ $("caissierPick").style.display="none"; return; }
+    $("caissierPick").style.display = "";
+    $("caissierSel").innerHTML = `<option value="">— choisir —</option>` +
+      st.caissiers.map(c=>`<option value="${escHtml(c.id)}"${st.session.caissier_id===c.id?" selected":""}>${escHtml(st.empMap[c.id])}</option>`).join("");
+  }
+
+  // -------- Recompute écarts (§6.2) --------
+  function recompute(){
+    let totRecuEsp=0, totRecuOm=0;
+    document.querySelectorAll("#servList .serv").forEach(c=>{
+      totRecuEsp += Number(c.querySelector(".r-esp").value)||0;
+      totRecuOm  += Number(c.querySelector(".r-om").value)||0;
+    });
+    const fond = Number($("fond").value)||0;
+    const entrees = st.mvts.filter(m=>m.type==="entree").reduce((a,m)=>a+(m.montant||0),0);
+    const sorties = st.mvts.filter(m=>m.type==="sortie").reduce((a,m)=>a+(m.montant||0),0);
+    const theo = fond + totRecuEsp + entrees - sorties - st.achats;
+    const totalReel = Number($("totalReel").value)||0;
+    const totalOm = Number($("totalOm").value)||0;
+    const ecartEsp = theo - totalReel;
+    const ecartOm = totRecuOm - totalOm;
+    const ecart = ecartEsp + ecartOm;
+    st._calc = { theo, ecartEsp, ecartOm, ecart, surplus: Math.max(0,-ecart) };
+    $("rTheo").textContent = gnf(theo);
+    paint($("rEcartEsp"), ecartEsp);
+    paint($("rEcartOm"), ecartOm);
+    paint($("rEcart"), ecart);
+  }
+  function paint(el,val){ el.textContent = gnf(val); el.className = val>0?"pos":val<0?"neg":"zero"; }
+  ["fond","totalReel","totalOm"].forEach(id=>$(id).addEventListener("input",recompute));
+
+  // -------- Fond --------
+  $("saveFond").addEventListener("click", async ()=>{
+    if (readOnly()) return;
+    const fond = Math.round(Number($("fond").value)||0);
+    const { error } = await db.from("sessions_caisse").update({ fond_caisse: fond }).eq("id", st.session.id);
+    if (error){ toast("Erreur","ko"); return; }
+    st.session.fond_caisse = fond; toast("Fond enregistré","ok"); recompute();
+  });
+
+  // -------- Clôture --------
+  $("closeBtn").addEventListener("click", async ()=>{
+    if (st.closing || readOnly()) return;
+    if ($("totalReel").value===""){ toast("Saisis les espèces comptées","ko"); return; }
+    let caissierId = role==="caissier" ? meId : $("caissierSel").value;
+    if (!caissierId){ toast("Choisis la caissière responsable","ko"); return; }
+    if (!confirm("Clôturer la caisse ? Les serveuses ne pourront plus saisir.")) return;
+    st.closing = true; $("closeBtn").disabled = true;
+    try {
+      recompute();
+      const c = st._calc;
+      const { error } = await db.from("sessions_caisse").update({
+        fond_caisse: Math.round(Number($("fond").value)||0),
+        total_reel: Math.round(Number($("totalReel").value)||0),
+        total_om_verifie: Math.round(Number($("totalOm").value)||0),
+        ecart_especes: Math.round(c.ecartEsp),
+        ecart_om: Math.round(c.ecartOm),
+        ecart: Math.round(c.ecart),
+        surplus_caisse: Math.round(c.surplus),
+        caissier_id: caissierId,
+        note_caissier: $("note").value.trim()||null,
+        statut: "valide_caissier",
+      }).eq("id", st.session.id);
+      if (error) throw error;
+      await ML.logAction("Clôture caisse — écart espèces "+gnf(c.ecartEsp));
+      toast("Caisse clôturée","ok");
+      await loadAll();
+    } catch(e){ console.error(e); toast("Erreur de clôture","ko"); }
+    finally { st.closing=false; $("closeBtn").disabled=false; }
+  });
+
+  // -------- Realtime ventes --------
+  function subscribe(){
+    st.sub = db.channel("caisse")
+      .on("postgres_changes",{event:"*",schema:"public",table:"ventes_session"}, async ()=>{
+        const { data } = await db.from("ventes_session").select("*").eq("session_id", st.session.id);
+        st.ventes = data||[]; renderServeuses(); recompute();
+      }).subscribe();
+  }
+  window.addEventListener("beforeunload",()=>{ if(st.sub) db.removeChannel(st.sub); });
+
+  loadAll().then(subscribe).catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+</script>
+</body></html>

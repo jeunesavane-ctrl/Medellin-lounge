@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Connexion — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  body { padding-top: 0; }
+  .login-wrap {
+    position: relative; min-height: 100dvh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: clamp(14px, 3vh, 28px) 18px;
+  }
+  .login-wrap::before {
+    content: ""; position: fixed; width: 70vmax; height: 70vmax; left: 50%; top: 12%;
+    transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(227,185,74,.12), transparent 60%);
+    pointer-events: none; animation: breathe 7s ease-in-out infinite;
+  }
+  @keyframes breathe { 0%,100% { opacity: .65; } 50% { opacity: 1; } }
+  .login-card {
+    position: relative; z-index: 1; width: 100%; max-width: 360px;
+    display: flex; flex-direction: column; align-items: center;
+    padding: clamp(20px,3.4vh,34px) clamp(18px,5vw,28px) clamp(16px,3vh,28px); border-radius: 24px;
+    background: linear-gradient(180deg, rgba(33,28,20,.75), rgba(15,12,9,.85));
+    border: 1px solid var(--line-2); backdrop-filter: blur(14px);
+    box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .login-logo {
+    width: clamp(52px,8.5vh,68px); height: clamp(52px,8.5vh,68px); border-radius: 20px;
+    background: linear-gradient(145deg, var(--gold-soft), var(--gold-2) 70%);
+    color: #2a1d05; font-weight: 800; font-size: clamp(20px,3.6vh,27px); letter-spacing: .5px;
+    display: flex; align-items: center; justify-content: center; margin-bottom: clamp(12px,2.2vh,18px);
+    box-shadow: 0 10px 30px rgba(227,185,74,.40), inset 0 2px 0 rgba(255,255,255,.45);
+    animation: glow 4s ease-in-out infinite;
+  }
+  @keyframes glow {
+    0%,100% { box-shadow: 0 10px 30px rgba(227,185,74,.30), inset 0 2px 0 rgba(255,255,255,.45); }
+    50%     { box-shadow: 0 12px 44px rgba(227,185,74,.55), inset 0 2px 0 rgba(255,255,255,.45); }
+  }
+  .login-brand {
+    font-size: clamp(21px,4.2vh,28px); font-weight: 800; letter-spacing: 3px; margin-bottom: 5px;
+    background: linear-gradient(90deg, #fff, var(--gold-soft));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .login-brand span { -webkit-text-fill-color: var(--gold); }
+  .login-tag { color: var(--muted); font-size: 13px; margin-bottom: clamp(14px,2.8vh,28px); text-align: center; letter-spacing: .3px; }
+  .pin-dots { display: flex; gap: 15px; margin-bottom: clamp(14px,2.8vh,28px); min-height: 16px; }
+  .pin-dots .dot {
+    width: 15px; height: 15px; border-radius: 50%;
+    border: 2px solid var(--line-2); background: transparent; transition: all .2s ease;
+  }
+  .pin-dots .dot.on {
+    background: var(--gold); border-color: var(--gold);
+    box-shadow: 0 0 14px rgba(227,185,74,.7); transform: scale(1.12);
+  }
+  .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(9px,1.8vh,16px); width: 100%; max-width: min(290px, 80vw, 42vh); }
+  .key {
+    aspect-ratio: 1 / 1;
+    background: linear-gradient(180deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--line-2); color: var(--text);
+    border-radius: 50%; font-size: clamp(20px,3.4vh,26px); font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; user-select: none;
+    transition: transform .1s, background .15s, box-shadow .15s, border-color .15s;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .key:hover { background: var(--surface-3); border-color: var(--gold-dim); }
+  .key:active {
+    background: linear-gradient(145deg, var(--gold-soft), var(--gold-2)); color: #2a1d05;
+    transform: scale(.94); box-shadow: 0 0 24px rgba(227,185,74,.5);
+  }
+  .key.fn { font-size: 22px; color: var(--muted); background: transparent; border-color: var(--line); box-shadow: none; }
+  .key.ok { color: var(--gold); border-color: rgba(227,185,74,.35); }
+  .key.ok:active { color: #2a1d05; }
+  .key:disabled { opacity: .4; pointer-events: none; }
+  .login-foot { margin-top: clamp(14px,2.4vh,26px); color: var(--faint); font-size: 11px; text-align: center; letter-spacing: .3px; }
+  .login-card { animation: cardIn .8s var(--ease) both; }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(22px) scale(.95); } to { opacity: 1; transform: none; } }
+  .key { animation: keyIn .5s var(--ease) backwards; }
+  .key:nth-child(1){animation-delay:.30s} .key:nth-child(2){animation-delay:.35s} .key:nth-child(3){animation-delay:.40s}
+  .key:nth-child(4){animation-delay:.45s} .key:nth-child(5){animation-delay:.50s} .key:nth-child(6){animation-delay:.55s}
+  .key:nth-child(7){animation-delay:.60s} .key:nth-child(8){animation-delay:.65s} .key:nth-child(9){animation-delay:.70s}
+  .key:nth-child(10){animation-delay:.75s} .key:nth-child(11){animation-delay:.80s} .key:nth-child(12){animation-delay:.85s}
+  @keyframes keyIn { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) { .login-card, .key { animation: none; } }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo">ML</div>
+    <div class="login-brand">MEDELLIN <span>LOUNGE</span></div>
+    <div class="login-tag">Entrez votre code confidentiel</div>
+
+    <div class="pin-dots" id="dots"></div>
+
+    <div class="keypad" id="keypad">
+      <button class="key" data-d="1">1</button>
+      <button class="key" data-d="2">2</button>
+      <button class="key" data-d="3">3</button>
+      <button class="key" data-d="4">4</button>
+      <button class="key" data-d="5">5</button>
+      <button class="key" data-d="6">6</button>
+      <button class="key" data-d="7">7</button>
+      <button class="key" data-d="8">8</button>
+      <button class="key" data-d="9">9</button>
+      <button class="key fn" id="kClear">&#9003;</button>
+      <button class="key" data-d="0">0</button>
+      <button class="key ok" id="kOk">&#10003;</button>
+    </div>
+  </div>
+
+  <div class="login-foot">NEXUS SERVICES &amp; CONSTRUCTION SARL — Conakry</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  // Déjà connecté ? → vers sa page d'accueil
+  if (ML.getRole()) location.href = landingFor(ML.getRole());
+
+  let pin = "";
+  let busy = false;
+
+  function landingFor(role) {
+    return ({
+      owner: "dashboard.html", manager: "dashboard.html", associe: "dashboard.html",
+      staff: "saisie.html", caissier: "caisse.html", chicha: "chicha.html", achats: "achats.html",
+    })[role] || "dashboard.html";
+  }
+
+  function renderDots() {
+    const n = Math.max(pin.length, 4);
+    let html = "";
+    for (let i = 0; i < n; i++) html += `<div class="dot${i < pin.length ? " on" : ""}"></div>`;
+    $("dots").innerHTML = html;
+  }
+  renderDots();
+
+  function addDigit(d) {
+    if (busy || pin.length >= 12) return;
+    pin += d;
+    renderDots();
+  }
+  function clearPin() { pin = ""; renderDots(); }
+
+  async function validate() {
+    if (busy) return;
+    if (pin.length < 4) { toast("Code trop court", "ko"); return; }
+    busy = true;
+    $("kOk").disabled = true;
+    try {
+      const h = await sha256(pin);
+
+      // 1+2. config : owner puis manager (secours)
+      const { data: cfgRows, error: cErr } = await db
+        .from("config").select("key,value")
+        .in("key", ["pin_owner", "pin_manager", "owner_nom"]);
+      if (cErr) throw cErr;
+      const C = {};
+      (cfgRows || []).forEach((r) => (C[r.key] = r.value));
+
+      let role = null, extra = null;
+
+      if (C.pin_owner && h === C.pin_owner) {
+        role = "owner";
+        extra = { nom: C.owner_nom || "Gestionnaire" };
+      } else if (C.pin_manager && h === C.pin_manager) {
+        role = "manager";
+        extra = { nom: "Manager", acces: "secours" };
+      } else {
+        // 3. employes
+        const { data: emp } = await db
+          .from("employes").select("id,nom,prenom,role")
+          .eq("pin_hash", h).not("actif", "is", false).limit(1);
+        if (emp && emp.length) {
+          const e = emp[0];
+          role = e.role;
+          extra = { nom: ((e.prenom ? e.prenom + " " : "") + e.nom).trim(), employe_id: e.id };
+        } else {
+          // 4. associes
+          const { data: asso } = await db
+            .from("associes").select("id,nom,prenom,pourcentage")
+            .eq("pin_hash", h).not("actif", "is", false).limit(1);
+          if (asso && asso.length) {
+            const a = asso[0];
+            role = "associe";
+            extra = {
+              nom: ((a.prenom ? a.prenom + " " : "") + a.nom).trim(),
+              associe_id: a.id, pourcentage: a.pourcentage,
+            };
+          }
+        }
+      }
+
+      // 5. aucune correspondance
+      if (!role) { toast("Code incorrect", "ko"); clearPin(); return; }
+
+      ML.setSession(role, extra, { hOwner: C.pin_owner || null, hManager: C.pin_manager || null });
+      await ML.logAction("Connexion " + role);
+      location.href = landingFor(role);
+    } catch (e) {
+      console.error(e);
+      toast("Erreur de connexion", "ko");
+    } finally {
+      busy = false;
+      $("kOk").disabled = false;
+    }
+  }
+
+  // Pavé
+  $("keypad").addEventListener("click", (ev) => {
+    const k = ev.target.closest(".key");
+    if (!k) return;
+    if (k.dataset.d) addDigit(k.dataset.d);
+  });
+  $("kClear").addEventListener("click", clearPin);
+  $("kOk").addEventListener("click", validate);
+
+  // Clavier physique (test sur ordinateur)
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key >= "0" && ev.key <= "9") addDigit(ev.key);
+    else if (ev.key === "Backspace") { pin = pin.slice(0, -1); renderDots(); }
+    else if (ev.key === "Enter") validate();
+  });
+</script>
+</body></html>

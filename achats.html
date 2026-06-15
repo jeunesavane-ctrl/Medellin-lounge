@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Achats — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .ach { display:grid; grid-template-columns:1fr auto auto; gap:8px; align-items:center;
+         padding:10px 0; border-bottom:1px solid var(--line); }
+  .ach .d { font-size:12px; color:var(--muted); margin-top:2px; }
+  .twoin { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; }
+  .lock-banner { background:rgba(232,85,78,.12); border:1px solid var(--ko); color:var(--ko);
+                 padding:10px 14px; border-radius:10px; font-weight:600; margin-bottom:14px; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Achats & dépenses</h1>
+  <div class="ml-sub" id="sub"></div>
+  <div id="lockBanner" class="lock-banner" style="display:none">🔒 Caisse clôturée — saisie fermée</div>
+
+  <div class="card" id="formCard">
+    <h2 style="margin-top:0">Nouvel achat</h2>
+    <label>Catégorie</label>
+    <input id="aCat" list="catList" placeholder="Ex : Boissons, Charbon…">
+    <datalist id="catList">
+      <option value="Boissons"><option value="Chicha"><option value="Charbon">
+      <option value="Nourriture"><option value="Entretien"><option value="Transport"><option value="Divers">
+    </datalist>
+
+    <label>Désignation</label>
+    <input id="aNom" type="text" placeholder="Ex : Carton de Coca">
+
+    <div class="twoin">
+      <div><label>Quantité</label><input id="aQty" type="number" step="any" min="0" placeholder="Optionnel"></div>
+      <div><label>Prix unitaire (GNF)</label><input id="aPU" type="number" min="0" placeholder="Optionnel"></div>
+    </div>
+
+    <label>Montant total (GNF)</label>
+    <input id="aMontant" type="number" min="1" placeholder="0">
+
+    <button class="btn" id="addAchat">Ajouter</button>
+  </div>
+
+  <div class="card">
+    <div class="row between">
+      <h2 style="margin:0">Achats du jour</h2>
+      <b class="gold" id="total">0 GNF</b>
+    </div>
+    <div id="list" class="mt">Chargement…</div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["achats", "manager", "owner"])) throw new Error("non autorisé");
+
+  const st = { session:null, achats:[] };
+  const locked = () => !st.session || st.session.statut !== "ouvert";
+
+  async function ensureSession(){
+    let { data, error } = await db.from("sessions_caisse").insert({ date: todayISO() }).select().single();
+    if (error && error.code === "23505") ({ data } = await db.from("sessions_caisse").select("*").eq("date", todayISO()).single());
+    else if (error) throw error;
+    return data;
+  }
+
+  async function load(){
+    st.session = await ensureSession();
+    $("sub").textContent = frDate(todayISO()) + " · " + (locked() ? "caisse clôturée" : "caisse ouverte");
+    $("lockBanner").style.display = locked() ? "" : "none";
+    if (locked()) document.querySelectorAll("#formCard input, #formCard button").forEach(el=>el.disabled=true);
+    await loadAchats();
+  }
+
+  async function loadAchats(){
+    const { data } = await db.from("achats_session").select("*").eq("session_id", st.session.id).order("created_at");
+    st.achats = data || [];
+    const tot = st.achats.reduce((a,x)=>a+(x.montant||0),0);
+    $("total").textContent = gnf(tot);
+    const el = $("list");
+    if (!st.achats.length){ el.innerHTML = `<p class="muted">Aucun achat enregistré.</p>`; return; }
+    el.innerHTML = st.achats.map(a=>`
+      <div class="ach" data-id="${escHtml(a.id)}">
+        <div>
+          <div style="font-weight:600">${escHtml(a.produit_nom || a.categorie || "Achat")}</div>
+          <div class="d">${escHtml(a.categorie || "")}${a.qty?` · ${a.qty}${a.prix_unitaire?" × "+gnf(a.prix_unitaire):""}`:""}</div>
+        </div>
+        <b>${gnf(a.montant)}</b>
+        ${locked() ? "" : `<button class="btn btn-sm btn-ghost a-del">✕</button>`}
+      </div>`).join("");
+  }
+
+  // auto-calcul montant depuis qty × prix
+  function autoMontant(){
+    const q = Number($("aQty").value), pu = Number($("aPU").value);
+    if (q > 0 && pu > 0) $("aMontant").value = Math.round(q * pu);
+  }
+  $("aQty").addEventListener("input", autoMontant);
+  $("aPU").addEventListener("input", autoMontant);
+
+  $("addAchat").addEventListener("click", async ()=>{
+    if (locked()) return;
+    const montant = Math.round(Number($("aMontant").value) || 0);
+    if (!(montant > 0)){ toast("Montant invalide", "ko"); return; }
+    const rec = {
+      session_id: st.session.id,
+      categorie: $("aCat").value.trim() || null,
+      produit_nom: $("aNom").value.trim() || null,
+      montant,
+      qty: Number($("aQty").value) || null,
+      prix_unitaire: Math.round(Number($("aPU").value) || 0) || null,
+    };
+    const { error } = await db.from("achats_session").insert(rec);
+    if (error){ toast("Erreur", "ko"); console.error(error); return; }
+    await ML.logAction("Achat "+gnf(montant)+(rec.produit_nom?" — "+rec.produit_nom:""));
+    ["aCat","aNom","aQty","aPU","aMontant"].forEach(id=>$(id).value="");
+    toast("Achat ajouté", "ok");
+    loadAchats();
+  });
+
+  $("list").addEventListener("click", async (ev)=>{
+    if (!ev.target.closest(".a-del")) return;
+    const row = ev.target.closest(".ach"); const id = row.dataset.id;
+    if (!confirm("Supprimer cet achat ?")) return;
+    const { error } = await db.from("achats_session").delete().eq("id", id);
+    if (error){ toast("Erreur", "ko"); return; }
+    await ML.logAction("Suppression achat");
+    toast("Supprimé", "ok"); loadAchats();
+  });
+
+  load().catch((e)=>{ console.error(e); toast("Erreur de chargement", "ko"); });
+</script>
+</body></html>

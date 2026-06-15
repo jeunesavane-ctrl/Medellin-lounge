@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Associés — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .as { display:grid; grid-template-columns:1fr auto auto auto; gap:8px; align-items:center;
+        padding:10px 0; border-bottom:1px solid var(--line); }
+  .as.off { opacity:.55; }
+  .as .pct { font-weight:800; color:var(--gold); }
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; }
+  .form-grid .full { grid-column:1/-1; }
+  .sumrow { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line); }
+  .hint { font-size:13px; margin-top:6px; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Associés</h1>
+  <div class="ml-sub">Co-investisseurs du lounge et leur participation</div>
+  <div id="content">Chargement…</div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["owner", "associe"])) throw new Error("non autorisé");
+
+  const role = ML.getRole();
+  const extra = ML.getExtra();
+  let editId = null;
+
+  const fullName = (a) => ((a.prenom ? a.prenom + " " : "") + (a.nom||"")).trim();
+
+  // ===================== VUE ASSOCIÉ (lecture seule, sa part) =====================
+  async function renderAssocieView(){
+    const pct = Number(extra.pourcentage) || 0;
+    $("content").innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0">Ma participation</h2>
+        <div class="sumrow"><span>${escHtml(extra.nom||"Associé")}</span><b class="pct" style="color:var(--gold);font-weight:800">${pct}%</b></div>
+        <p class="hint muted">Le détail de vos parts mois par mois est dans
+          <a class="gold" href="finances.html">Finances → Mes Parts</a> et
+          <a class="gold" href="bilan.html">Bilan → Ma part</a>.</p>
+      </div>`;
+  }
+
+  // ===================== VUE OWNER (gestion) =====================
+  async function renderOwnerView(){
+    $("content").innerHTML = `
+      <div class="card" id="capCard"></div>
+      <div class="card">
+        <h2 style="margin-top:0" id="formTitle">Ajouter un associé</h2>
+        <div id="editBanner" class="tag tag-warn mb" style="display:none">Modification en cours</div>
+        <div class="form-grid">
+          <div><label>Prénom</label><input id="aPrenom" type="text"></div>
+          <div><label>Nom</label><input id="aNom" type="text"></div>
+          <div><label>Pourcentage (%)</label><input id="aPct" type="number" min="0" max="100" step="any"></div>
+          <div><label>PIN (4 chiffres min)</label><input id="aPin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn" id="saveAs">Enregistrer</button>
+          <button class="btn btn-ghost" id="cancelAs" style="display:none">Annuler</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">Liste des associés</h2>
+        <div id="list">Chargement…</div>
+      </div>`;
+    $("saveAs").addEventListener("click", save);
+    $("cancelAs").addEventListener("click", resetForm);
+    $("list").addEventListener("click", onListClick);
+    await loadList();
+  }
+
+  async function activeSum(exceptId){
+    const { data } = await db.from("associes").select("id,pourcentage").not("actif","is",false);
+    return (data||[]).filter(a=>a.id!==exceptId).reduce((s,a)=>s+(Number(a.pourcentage)||0),0);
+  }
+
+  async function loadList(){
+    const { data } = await db.from("associes").select("*").order("actif",{ascending:false}).order("nom");
+    const list = data || [];
+    const sum = list.filter(a=>a.actif).reduce((s,a)=>s+(Number(a.pourcentage)||0),0);
+    const ownerPct = Math.max(0, 100 - sum);
+    $("capCard").innerHTML = `
+      <h2 style="margin-top:0">Répartition du capital</h2>
+      <div class="sumrow"><span>Associés actifs</span><b>${sum}%</b></div>
+      <div class="sumrow"><span>Owner (gestionnaire)</span><b>${ownerPct}%</b></div>
+      <div class="sumrow" style="border:none"><span>Total</span><b style="color:${sum<=100?"var(--ok)":"var(--ko)"}">${sum+ownerPct}%</b></div>
+      ${sum>100?`<p class="hint" style="color:var(--ko)">⚠ Les associés dépassent 100%.</p>`:""}`;
+    const el = $("list");
+    if (!list.length){ el.innerHTML = `<p class="muted">Aucun associé. Ajoute le premier ci-dessus.</p>`; return; }
+    el.innerHTML = list.map(a=>`
+      <div class="as${a.actif?"":" off"}" data-id="${escHtml(a.id)}">
+        <div style="font-weight:600">${escHtml(fullName(a))}${a.actif?"":' <span class="tag tag-muted">Inactif</span>'}</div>
+        <span class="pct">${Number(a.pourcentage)||0}%</span>
+        <button class="btn btn-sm btn-ghost a-edit">✎</button>
+        <button class="btn btn-sm btn-ghost a-toggle">${a.actif?"Désactiver":"Activer"}</button>
+      </div>`).join("");
+  }
+
+  function fillForm(a){
+    editId = a.id;
+    $("aPrenom").value=a.prenom||""; $("aNom").value=a.nom||""; $("aPct").value=a.pourcentage??"";
+    $("aPin").value=""; $("aPin").placeholder="Laisser vide = inchangé";
+    $("formTitle").textContent="Modifier : "+fullName(a);
+    $("editBanner").style.display=""; $("saveAs").textContent="Mettre à jour"; $("cancelAs").style.display="";
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+  function resetForm(){
+    editId=null;
+    ["aPrenom","aNom","aPct","aPin"].forEach(id=>$(id).value=""); $("aPin").placeholder="••••";
+    $("formTitle").textContent="Ajouter un associé";
+    $("editBanner").style.display="none"; $("saveAs").textContent="Enregistrer"; $("cancelAs").style.display="none";
+  }
+
+  async function syncOwnerPct(){
+    const sum = await activeSum(null);
+    await db.from("config").upsert({ key:"owner_pct", value:String(Math.max(0,100-sum)) }, { onConflict:"key" });
+  }
+
+  async function save(){
+    const nom = $("aNom").value.trim();
+    if (!nom){ toast("Nom requis","ko"); return; }
+    const pct = Number($("aPct").value)||0;
+    if (pct < 0){ toast("Pourcentage invalide","ko"); return; }
+    const othersSum = await activeSum(editId);
+    if (othersSum + pct > 100){ toast(`Dépasse 100% (reste ${100-othersSum}% disponible)`,"ko"); return; }
+    const pin = $("aPin").value.trim();
+    const rec = { prenom:$("aPrenom").value.trim()||null, nom, pourcentage:pct };
+    if (pin){ if(!/^\d{4,}$/.test(pin)){ toast("PIN : 4 chiffres minimum","ko"); return; } rec.pin_hash=await sha256(pin); }
+    let error;
+    if (editId) ({ error } = await db.from("associes").update(rec).eq("id",editId));
+    else {
+      if (!pin){ toast("PIN requis pour un nouvel associé","ko"); return; }
+      ({ error } = await db.from("associes").insert(rec));
+    }
+    if (error){ toast("Erreur d'enregistrement","ko"); console.error(error); return; }
+    await syncOwnerPct();
+    await ML.logAction((editId?"MAJ associé ":"Ajout associé ")+nom);
+    toast(editId?"Associé mis à jour":"Associé ajouté","ok");
+    resetForm(); loadList();
+  }
+
+  async function onListClick(ev){
+    const row = ev.target.closest(".as"); if(!row) return; const id = row.dataset.id;
+    if (ev.target.closest(".a-edit")){
+      const { data } = await db.from("associes").select("*").eq("id",id).single();
+      if (data) fillForm(data);
+    } else if (ev.target.closest(".a-toggle")){
+      const { data } = await db.from("associes").select("actif,nom").eq("id",id).single();
+      const { error } = await db.from("associes").update({ actif:!data.actif }).eq("id",id);
+      if (error){ toast("Erreur","ko"); return; }
+      await syncOwnerPct();
+      await ML.logAction((data.actif?"Désactiver":"Activer")+" associé "+data.nom);
+      loadList();
+    }
+  }
+
+  (role === "associe" ? renderAssocieView() : renderOwnerView())
+    .catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+</script>
+</body></html>

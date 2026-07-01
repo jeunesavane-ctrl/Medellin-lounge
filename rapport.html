@@ -152,7 +152,11 @@
     const bo = Math.round(Number($("tBoissons").value)||0);
     const rec = ch + bo;
     const net = rec - st.achatsTotal;
-    if (!confirm("Valider le rapport ? Les tables seront remises à zéro pour demain.")) return;
+    const isToday = theDate === todayISO();
+    const confirmMsg = isToday
+      ? "Valider le rapport ? Les tables seront remises à zéro pour la prochaine session."
+      : "Valider ce rapport passé ? La session sera marquée validée (les tables du jour ne seront pas affectées).";
+    if (!confirm(confirmMsg)) return;
     st.saving = true; $("validBtn").disabled = true;
     try {
       const { data:mx } = await db.from("rapports").select("num").order("num",{ascending:false}).limit(1);
@@ -169,12 +173,14 @@
       });
       if (error){ toast(error.code==="23505" ? "Rapport déjà existant pour cette date" : "Erreur", "ko"); return; }
       await db.from("sessions_caisse").update({ statut: "valide_manager" }).eq("id", st.session.id);
-      await db.from("tables_lounge").update({ ouverte_par: null }).eq("actif", true);
+      if (isToday) {
+        await db.from("tables_lounge").update({ ouverte_par: null }).eq("actif", true);
+      }
       await ML.logAction(`Validation rapport #${nextNum} — net ${gnf(net)}`);
       toast("Rapport validé", "ok");
       await load();
     } catch(e){ console.error(e); toast("Erreur de validation","ko"); }
-    finally { st.saving=false; }
+    finally { st.saving=false; const vb=$("validBtn"); if(vb) vb.disabled=false; }
   }
 
   async function renderValidated(){

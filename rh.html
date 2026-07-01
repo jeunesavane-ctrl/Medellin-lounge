@@ -291,6 +291,7 @@
   $("reqJustifs").addEventListener("click",handleReq);
 
   // ===================== AVANCES =====================
+  let _addingAvance = false;
   async function empNameMap(){
     const {data}=await db.from("employes").select("id,nom,prenom");
     const m={}; (data||[]).forEach(e=>m[e.id]=fullName(e)); return m;
@@ -300,14 +301,18 @@
     $("avEmp").innerHTML=(data||[]).map(e=>`<option value="${escHtml(e.id)}">${escHtml(fullName(e))}</option>`).join("");
   }
   $("addAvance").addEventListener("click",async()=>{
+    if (_addingAvance) return;
     const employe_id=$("avEmp").value; const montant=Math.round(Number($("avMontant").value)||0);
     if(!employe_id){ toast("Choisir un employé","ko"); return; }
     if(!(montant>0)){ toast("Montant invalide","ko"); return; }
-    const {error}=await db.from("avances").insert({employe_id,montant,date:todayISO(),statut:"approuvee",obs:$("avObs").value.trim()||null});
-    if(error){ toast("Erreur","ko"); console.error(error); return; }
-    await ML.logAction("Avance accordée "+gnf(montant));
-    $("avMontant").value=""; $("avObs").value="";
-    toast("Avance accordée","ok");
+    _addingAvance = true; $("addAvance").disabled = true;
+    try {
+      const {error}=await db.from("avances").insert({employe_id,montant,date:todayISO(),statut:"approuvee",obs:$("avObs").value.trim()||null});
+      if(error){ toast("Erreur","ko"); console.error(error); return; }
+      await ML.logAction("Avance accordée "+gnf(montant));
+      $("avMontant").value=""; $("avObs").value="";
+      toast("Avance accordée","ok");
+    } finally { _addingAvance = false; $("addAvance").disabled = false; }
   });
 
   // ===================== PAIE =====================

@@ -140,8 +140,8 @@
   }
   async function renderEvolution(){
     const months = await lastMonths(6);
-    const vals = [];
-    for (const m of months){ const d = await periodData(m); vals.push({ m, net: d.netForParts }); }
+    const results = await Promise.all(months.map(m => periodData(m)));
+    const vals = months.map((m, i) => ({ m, net: results[i].netForParts }));
     const max = Math.max(1, ...vals.map(v=>Math.abs(v.net)));
     $("pane-evolution").innerHTML = `
       <div class="card">

@@ -91,7 +91,8 @@
   async function ensureSession(){
     let { data, error } = await db.from("sessions_caisse").insert({ date: todayISO() }).select().single();
     if (error && error.code === "23505") {
-      ({ data } = await db.from("sessions_caisse").select("*").eq("date", todayISO()).single());
+      ({ data } = await db.from("sessions_caisse").select("*").eq("date", todayISO()).maybeSingle());
+      if (!data) throw new Error("Session introuvable après conflit d'insertion");
     } else if (error) { throw error; }
     return data;
   }
@@ -198,6 +199,7 @@
     const qty = Math.max(1, Math.round(Number($("vQty").value)||1));
     const prix = st.selProd.prix_defaut||0;
     const total = prix*qty;
+    if ((Number(st.selProd.stock_actuel)||0) < qty){ toast("Stock insuffisant pour cette quantité","ko"); return; }
     saving = true; $("addVente").disabled = true;
     try {
       const { error } = await db.from("ventes_session").insert({

@@ -59,8 +59,10 @@
 
   async function ensureSession(){
     let { data, error } = await db.from("sessions_caisse").insert({ date: todayISO() }).select().single();
-    if (error && error.code === "23505") ({ data } = await db.from("sessions_caisse").select("*").eq("date", todayISO()).single());
-    else if (error) throw error;
+    if (error && error.code === "23505") {
+      ({ data } = await db.from("sessions_caisse").select("*").eq("date", todayISO()).maybeSingle());
+      if (!data) throw new Error("Session introuvable après conflit d'insertion");
+    } else if (error) throw error;
     return data;
   }
 

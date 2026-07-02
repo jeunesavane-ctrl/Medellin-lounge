@@ -120,8 +120,12 @@
     const tp = Number($("aTetoesParBoite").value);
     if (nb > 0 && tp > 0){
       const total = nb * tp;
-      $("chichaCalc").textContent = `${nb} boîte${nb>1?"s":""} × ${tp} têtes = ${total} têtes en stock`;
-      $("aQty").value = total; // qty stocké = total têtes
+      $("aQty").value = total;
+      const prixTete = Number($("aProduit").selectedOptions[0]?.dataset?.pa || 0);
+      const montantAuto = prixTete > 0 ? total * prixTete : 0;
+      if (montantAuto > 0) $("aMontant").value = montantAuto;
+      const montantTxt = montantAuto > 0 ? ` → ${gnf(montantAuto)}` : "";
+      $("chichaCalc").textContent = `${nb} boîte${nb>1?"s":""} × ${tp} têtes = ${total} têtes${montantTxt}`;
     } else {
       $("chichaCalc").textContent = "";
       $("aQty").value = "";

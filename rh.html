@@ -48,15 +48,24 @@
         <div><label>Poste</label><input id="ePoste" type="text" placeholder="Ex : Serveuse"></div>
         <div><label>Rôle</label>
           <select id="eRole">
-            <option value="staff">Staff (serveuse)</option>
-            <option value="caissier">Caissier</option>
-            <option value="chicha">Chicha</option>
-            <option value="achats">Achats</option>
-            <option value="manager">Manager</option>
+            <optgroup label="— Avec accès système —">
+              <option value="staff">Staff (serveuse)</option>
+              <option value="caissier">Caissier</option>
+              <option value="chicha">Chicha</option>
+              <option value="achats">Achats</option>
+              <option value="manager">Manager</option>
+            </optgroup>
+            <optgroup label="— Sans accès système —">
+              <option value="securite">Sécurité</option>
+              <option value="bodyguard">Bodyguard</option>
+              <option value="dj">DJ</option>
+              <option value="nettoyeur">Nettoyeur</option>
+            </optgroup>
           </select>
         </div>
         <div><label>Salaire de base (GNF)</label><input id="eSalaire" type="number" min="0" placeholder="0"></div>
-        <div><label>PIN (4 chiffres min)</label><input id="ePin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••"></div>
+        <div id="ePinWrap"><label>PIN (4 chiffres min)</label><input id="ePin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••"></div>
+        <div id="ePinNone" class="full" style="display:none"><p class="muted" style="margin:4px 0;font-size:13px">📵 Poste sans accès — pas de PIN requis</p></div>
       </div>
       <div class="btn-row">
         <button class="btn" id="saveEmp">Enregistrer</button>
@@ -126,7 +135,16 @@
   document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
   if (!initPage(["manager", "owner"])) throw new Error("non autorisé");
 
-  const ROLE_LBL = { staff:"Staff", caissier:"Caissier", chicha:"Chicha", achats:"Achats", manager:"Manager" };
+  const ROLE_LBL = { staff:"Staff", caissier:"Caissier", chicha:"Chicha", achats:"Achats", manager:"Manager", securite:"Sécurité", bodyguard:"Bodyguard", dj:"DJ", nettoyeur:"Nettoyeur" };
+  const ROLES_SANS_ACCES = ["securite","bodyguard","dj","nettoyeur"];
+  const sansAcces = () => ROLES_SANS_ACCES.includes($("eRole").value);
+  function updatePinVisibility(){
+    const sa = sansAcces();
+    $("ePinWrap").style.display = sa ? "none" : "";
+    $("ePinNone").style.display = sa ? "" : "none";
+    if(sa) $("ePin").value = "";
+  }
+  $("eRole").addEventListener("change", updatePinVisibility);
   const PRES_STATUTS = [["present","Présent"],["absent","Absent"],["retard","Retard"],["conge","Congé"],["repos","Repos"]];
   let empEditId = null;
   const fullName = (e) => ((e.prenom ? e.prenom + " " : "") + (e.nom||"")).trim();
@@ -166,7 +184,7 @@
     empEditId=e.id;
     $("ePrenom").value=e.prenom||""; $("eNom").value=e.nom||""; $("ePoste").value=e.poste||"";
     $("eRole").value=e.role||"staff"; $("eSalaire").value=e.salaire_base??""; $("ePin").value="";
-    $("ePin").placeholder="Laisser vide = inchangé";
+    $("ePin").placeholder="Laisser vide = inchangé"; updatePinVisibility();
     $("empFormTitle").textContent="Modifier : "+fullName(e);
     $("empEditBanner").style.display=""; $("saveEmp").textContent="Mettre à jour"; $("cancelEmp").style.display="";
     window.scrollTo({top:0,behavior:"smooth"});
@@ -174,7 +192,7 @@
   function resetEmpForm(){
     empEditId=null;
     ["ePrenom","eNom","ePoste","eSalaire","ePin"].forEach(id=>$(id).value="");
-    $("eRole").value="staff"; $("ePin").placeholder="••••";
+    $("eRole").value="staff"; $("ePin").placeholder="••••"; updatePinVisibility();
     $("empFormTitle").textContent="Ajouter un employé";
     $("empEditBanner").style.display="none"; $("saveEmp").textContent="Enregistrer"; $("cancelEmp").style.display="none";
   }
@@ -192,7 +210,7 @@
     let error;
     if(empEditId){ ({error}=await db.from("employes").update(rec).eq("id",empEditId)); }
     else {
-      if(!pin){ toast("PIN requis pour un nouvel employé","ko"); return; }
+      if(!pin && !sansAcces()){ toast("PIN requis pour un nouvel employé","ko"); return; }
       ({error}=await db.from("employes").insert(rec));
     }
     if(error){ toast("Erreur d'enregistrement","ko"); console.error(error); return; }

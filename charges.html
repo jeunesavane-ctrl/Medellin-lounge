@@ -47,7 +47,11 @@
       </div>
       <div><label>Montant (GNF)</label><input id="cMontant" type="number" min="1" placeholder="0"></div>
       <div><label>Récurrence</label>
-        <select id="cRec"><option value="mensuel">Mensuelle</option><option value="ponctuel">Ponctuelle</option></select>
+        <select id="cRec">
+          <option value="mensuel">Mensuelle</option>
+          <option value="bimestriel">Bimestrielle (2 mois)</option>
+          <option value="ponctuel">Ponctuelle</option>
+        </select>
       </div>
       <div class="full chk"><input id="cPaye" type="checkbox"><label for="cPaye" style="margin:0">Déjà payée</label></div>
     </div>
@@ -73,25 +77,61 @@
 
   function curMonth(){ return $("month").value || todayISO().slice(0,7); }
 
+  function prevMonth(ym){
+    const [y,m] = ym.split("-").map(Number);
+    return m === 1 ? `${y-1}-12` : `${y}-${String(m-1).padStart(2,"0")}`;
+  }
+
+  function montantEffectif(c){ return c.recurrence === "bimestriel" ? (c.montant||0)/2 : (c.montant||0); }
+
   async function loadList(){
     const mois = curMonth();
-    const { data } = await db.from("charges").select("*").eq("mois", mois).order("paye").order("label");
-    const charges = data || [];
-    const total = charges.reduce((a,c)=>a+(c.montant||0),0);
-    const paye = charges.filter(c=>c.paye).reduce((a,c)=>a+(c.montant||0),0);
+    const prev = prevMonth(mois);
+    const [{ data: curData }, { data: prevData }] = await Promise.all([
+      db.from("charges").select("*").eq("mois", mois).order("paye").order("label"),
+      db.from("charges").select("*").eq("mois", prev).eq("recurrence","bimestriel"),
+    ]);
+    const charges = curData || [];
+    const covered = prevData || [];
+
+    const total = charges.reduce((a,c)=>a+montantEffectif(c),0)
+                + covered.reduce((a,c)=>a+(c.montant||0)/2,0);
+    const paye  = charges.filter(c=>c.paye).reduce((a,c)=>a+montantEffectif(c),0)
+                + covered.reduce((a,c)=>a+(c.montant||0)/2,0); // couvert = toujours payé
     $("sTotal").textContent = gnf(total);
-    $("sPaye").textContent = gnf(paye);
-    $("sDu").textContent = gnf(total - paye);
+    $("sPaye").textContent  = gnf(paye);
+    $("sDu").textContent    = gnf(total - paye);
+
     const el = $("list");
-    if (!charges.length){ el.innerHTML = `<p class="muted">Aucune charge pour ${escHtml(frMonth(mois+"-01"))}.</p>`; return; }
-    el.innerHTML = charges.map(c=>`
-      <div class="chg" data-id="${escHtml(c.id)}">
+    if (!charges.length && !covered.length){
+      el.innerHTML = `<p class="muted">Aucune charge pour ${escHtml(frMonth(mois+"-01"))}.</p>`; return;
+    }
+
+    const curHtml = charges.map(c=>{
+      const isBim = c.recurrence === "bimestriel";
+      const tag = isBim
+        ? ` · bimestrielle · 2ᵉ mois couvert automatiquement`
+        : (c.recurrence==="mensuel"?" · mensuelle":"");
+      return `
+        <div class="chg" data-id="${escHtml(c.id)}">
+          <div><div style="font-weight:600">${escHtml(c.label)}</div>
+            <div class="d">${escHtml(c.categorie||"")}${tag}${c.paye&&c.date_paiement?" · payé le "+escHtml(frDateShort(c.date_paiement)):""}</div></div>
+          <b>${gnf(montantEffectif(c))}</b>
+          <button class="btn btn-sm ${c.paye?"btn-ghost":""} c-pay">${c.paye?"Payé ✓":"Marquer payé"}</button>
+          <button class="btn btn-sm btn-ghost c-edit">✎</button>
+        </div>`;
+    }).join("");
+
+    const covHtml = covered.map(c=>`
+      <div class="chg" style="opacity:.65">
         <div><div style="font-weight:600">${escHtml(c.label)}</div>
-          <div class="d">${escHtml(c.categorie||"")}${c.recurrence==="mensuel"?" · mensuelle":""}${c.paye&&c.date_paiement?" · payé le "+escHtml(frDateShort(c.date_paiement)):""}</div></div>
-        <b>${gnf(c.montant)}</b>
-        <button class="btn btn-sm ${c.paye?"btn-ghost":""} c-pay">${c.paye?"Payé ✓":"Marquer payé"}</button>
-        <button class="btn btn-sm btn-ghost c-edit">✎</button>
+          <div class="d">${escHtml(c.categorie||"")} · couvert par paiement de ${escHtml(frMonth(prev+"-01"))}</div></div>
+        <b>${gnf((c.montant||0)/2)}</b>
+        <span class="btn btn-sm btn-ghost" style="cursor:default">Couvert ✓</span>
+        <span></span>
       </div>`).join("");
+
+    el.innerHTML = curHtml + covHtml;
   }
 
   function fillForm(c){

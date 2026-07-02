@@ -37,21 +37,25 @@
   let associes = [], assocSum = 0;
 
   function monthBounds(ym){ const [y,m]=ym.split("-").map(Number); const nm=m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,"0")}`; return { start:`${ym}-01`, end:`${nm}-01` }; }
+  function prevMonth(ym){ const [y,m]=ym.split("-").map(Number); return m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,"0")}`; }
   function partLounge(){ return Number(cfg.part_lounge ?? 10); }
   function distribPct(){ return Math.max(0, 100 - partLounge()) / 100; }
   function ownerPct(){ return cfg.owner_pct != null ? Number(cfg.owner_pct) : Math.max(0, 100 - assocSum); }
 
   async function periodData(ym){
     const { start, end } = monthBounds(ym);
-    const [{ data:raps }, { data:chg }, { data:sal }] = await Promise.all([
+    const prev = prevMonth(ym);
+    const [{ data:raps }, { data:chg }, { data:chgPrev }, { data:sal }] = await Promise.all([
       db.from("rapports").select("recettes,total_achats,net").gte("date", start).lt("date", end),
-      db.from("charges").select("montant").eq("mois", ym),
+      db.from("charges").select("montant,recurrence").eq("mois", ym),
+      db.from("charges").select("montant").eq("mois", prev).eq("recurrence","bimestriel"),
       db.from("salaires_verses").select("net_verse").eq("mois", ym),
     ]);
     const recettes=(raps||[]).reduce((a,r)=>a+(r.recettes||0),0);
     const achats=(raps||[]).reduce((a,r)=>a+(r.total_achats||0),0);
     const marge=(raps||[]).reduce((a,r)=>a+(r.net||0),0);
-    const charges=(chg||[]).reduce((a,c)=>a+(c.montant||0),0);
+    const charges=(chg||[]).reduce((a,c)=>a+(c.recurrence==="bimestriel"?(c.montant||0)/2:(c.montant||0)),0)
+                +(chgPrev||[]).reduce((a,c)=>a+(c.montant||0)/2,0);
     const salaires=(sal||[]).reduce((a,s)=>a+(s.net_verse||0),0);
     return { recettes, achats, marge, charges, salaires, netForParts: marge-charges-salaires };
   }

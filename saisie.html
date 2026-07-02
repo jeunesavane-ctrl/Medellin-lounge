@@ -483,7 +483,17 @@
           $("lockBanner").style.display = locked() ? "" : "none";
           $("sub").textContent = frDate(todayISO()) + " · Caisse : " + (locked()?"clôturée":"ouverte");
         }
-      }).subscribe();
+      })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"produits"}, (payload) => {
+        const idx = st.produits.findIndex(p => p.id === payload.new.id);
+        if (idx !== -1) {
+          st.produits[idx] = { ...st.produits[idx], ...payload.new };
+          if (st.selProd?.id === payload.new.id) st.selProd = st.produits[idx];
+          renderProdPick();
+          renderTotal();
+        }
+      })
+      .subscribe();
   }
   window.addEventListener("beforeunload", () => { if (st.sub) db.removeChannel(st.sub); });
 

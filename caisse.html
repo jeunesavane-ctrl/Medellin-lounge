@@ -324,6 +324,11 @@
       .on("postgres_changes",{event:"*",schema:"public",table:"sessions_serveuse"}, async (payload)=>{
         if (payload.new && payload.new.date === todayISO()) await reloadSessions();
       })
+      .on("postgres_changes",{event:"*",schema:"public",table:"achats_session"}, async ()=>{
+        const { data } = await db.from("achats_session").select("montant").eq("session_id", st.session.id);
+        st.achats = (data||[]).reduce((a,x)=>a+(x.montant||0),0);
+        recompute();
+      })
       .subscribe();
   }
   window.addEventListener("beforeunload",()=>{ if(st.sub) db.removeChannel(st.sub); });

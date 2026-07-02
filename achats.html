@@ -51,12 +51,24 @@
       <div id="chichaCalc" style="font-size:13px;color:var(--gold);font-weight:700;margin:4px 0 8px"></div>
     </div>
 
-    <!-- Quantité visible seulement hors-chicha -->
-    <div id="qtyRow">
-      <label>Quantité</label><input id="aQty" type="number" step="any" min="0" placeholder="0">
+    <!-- Pack helper (non-chicha, optionnel) -->
+    <div id="packFields">
+      <div class="twoin">
+        <div><label>Nb de cartons / packs <span class="muted" style="font-size:11px">(optionnel)</span></label>
+          <input id="aNbPacks" type="number" min="1" placeholder="Ex : 2"></div>
+        <div><label>Unités par carton</label>
+          <input id="aUnitsParPack" type="number" min="1" placeholder="Ex : 24"></div>
+      </div>
+      <div id="packCalc" style="font-size:13px;color:var(--gold);font-weight:700;margin:0 0 8px"></div>
     </div>
 
-    <!-- Prix : toujours visible — "par boîte" pour chicha, "unitaire" pour le reste -->
+    <!-- Quantité totale (auto si packs, sinon saisie manuelle) -->
+    <div id="qtyRow">
+      <label id="qtyLabel">Quantité</label>
+      <input id="aQty" type="number" step="any" min="0" placeholder="0">
+    </div>
+
+    <!-- Prix : toujours visible -->
     <label id="puLabel">Prix unitaire (GNF)</label>
     <input id="aPU" type="number" min="0" placeholder="Optionnel">
 
@@ -114,10 +126,13 @@
     const opt = $("aProduit").selectedOptions[0];
     const chicha = opt && opt.dataset.type === "chicha";
     $("chichaFields").style.display = chicha ? "" : "none";
+    $("packFields").style.display  = chicha ? "none" : "";
     $("qtyRow").style.display = chicha ? "none" : "";
     $("puLabel").textContent = chicha ? "Prix par boîte (GNF)" : "Prix unitaire (GNF)";
+    $("qtyLabel").textContent = "Quantité";
     $("aNbBoites").value = ""; $("aTetoesParBoite").value = "";
-    $("chichaCalc").textContent = "";
+    $("aNbPacks").value  = ""; $("aUnitsParPack").value  = "";
+    $("chichaCalc").textContent = ""; $("packCalc").textContent = "";
     $("aQty").value = ""; $("aPU").value = "";
     if (!opt || !opt.value) return;
     $("aNom").value = opt.textContent.replace(/\s*\(stock.*\)$/,"").trim();
@@ -140,6 +155,26 @@
   $("aNbBoites").addEventListener("input", updateChichaCalc);
   $("aTetoesParBoite").addEventListener("input", updateChichaCalc);
 
+  function updatePackCalc(){
+    const nb = Number($("aNbPacks").value);
+    const u  = Number($("aUnitsParPack").value);
+    if (nb > 0 && u > 0){
+      const total = nb * u;
+      $("aQty").value = total;
+      $("packCalc").textContent = `${nb} carton${nb>1?"s":""} × ${u} = ${total} unités`;
+      $("puLabel").textContent = "Prix par carton (GNF)";
+      $("qtyLabel").textContent = "Quantité totale";
+    } else {
+      if (!nb && !u) $("aQty").value = "";
+      $("packCalc").textContent = "";
+      $("puLabel").textContent = "Prix unitaire (GNF)";
+      $("qtyLabel").textContent = "Quantité";
+    }
+    autoMontant();
+  }
+  $("aNbPacks").addEventListener("input", updatePackCalc);
+  $("aUnitsParPack").addEventListener("input", updatePackCalc);
+
   async function loadAchats(){
     const { data } = await db.from("achats_session").select("*").eq("session_id", st.session.id).order("created_at");
     st.achats = data || [];
@@ -161,12 +196,18 @@
   // auto-calcul montant
   function autoMontant(){
     const pu = Number($("aPU").value);
+    if (!pu) return;
     if (isChichaSelected()){
       const nb = Number($("aNbBoites").value);
-      if (nb > 0 && pu > 0) $("aMontant").value = Math.round(nb * pu);
+      if (nb > 0) $("aMontant").value = Math.round(nb * pu);
     } else {
-      const q = Number($("aQty").value);
-      if (q > 0 && pu > 0) $("aMontant").value = Math.round(q * pu);
+      const nbPacks = Number($("aNbPacks").value);
+      if (nbPacks > 0){
+        $("aMontant").value = Math.round(nbPacks * pu);
+      } else {
+        const q = Number($("aQty").value);
+        if (q > 0) $("aMontant").value = Math.round(q * pu);
+      }
     }
   }
   $("aQty").addEventListener("input", autoMontant);
@@ -178,14 +219,20 @@
     if (!(montant > 0)){ toast("Montant invalide", "ko"); return; }
     const produitId = $("aProduit").value || null;
     const chicha = isChichaSelected();
-    const nbBoites = chicha ? Number($("aNbBoites").value)||0 : 0;
+    const nbBoites      = chicha ? Number($("aNbBoites").value)||0 : 0;
     const tetesParBoite = chicha ? Number($("aTetoesParBoite").value)||0 : 0;
-    const qty = chicha ? (nbBoites * tetesParBoite) || null : Number($("aQty").value) || null;
+    const nbPacks       = !chicha ? Number($("aNbPacks").value)||0 : 0;
+    const unitsParPack  = !chicha ? Number($("aUnitsParPack").value)||0 : 0;
+    const qty = chicha
+      ? (nbBoites * tetesParBoite) || null
+      : Number($("aQty").value) || null;
     if (chicha && (!nbBoites||!tetesParBoite)){ toast("Indique les boîtes et têtes/boîte","ko"); return; }
     const nomBase = $("aNom").value.trim() || null;
     const produit_nom = chicha && nbBoites && tetesParBoite
       ? `${nomBase||"Chicha"} (${nbBoites} boîte${nbBoites>1?"s":""} × ${tetesParBoite} têtes)`
-      : nomBase;
+      : nbPacks && unitsParPack
+        ? `${nomBase||"Achat"} (${nbPacks} carton${nbPacks>1?"s":""} × ${unitsParPack})`
+        : nomBase;
     const rec = {
       session_id: st.session.id,
       produit_id: produitId,
@@ -207,12 +254,14 @@
       }
     }
     await ML.logAction("Achat "+gnf(montant)+(rec.produit_nom?" — "+rec.produit_nom:"")+(produitId&&qty?" · stock +"+qty:""));
-    ["aCat","aNom","aQty","aPU","aMontant","aNbBoites","aTetoesParBoite"].forEach(id=>$(id).value="");
+    ["aCat","aNom","aQty","aPU","aMontant","aNbBoites","aTetoesParBoite","aNbPacks","aUnitsParPack"].forEach(id=>$(id).value="");
     $("aProduit").value = "";
     $("chichaFields").style.display = "none";
+    $("packFields").style.display   = "";
     $("qtyRow").style.display = "";
-    $("chichaCalc").textContent = "";
-    $("puLabel").textContent = "Prix unitaire (GNF)";
+    $("chichaCalc").textContent = ""; $("packCalc").textContent = "";
+    $("puLabel").textContent  = "Prix unitaire (GNF)";
+    $("qtyLabel").textContent = "Quantité";
     toast("Achat ajouté" + (produitId&&qty?" · stock mis à jour":""), "ok");
     loadAchats();
   });

@@ -22,6 +22,10 @@
 
   <div class="card" id="formCard">
     <h2 style="margin-top:0">Nouvel achat</h2>
+
+    <label>Produit catalogue <span class="muted" style="font-size:12px">(optionnel — met à jour le stock)</span></label>
+    <select id="aProduit"><option value="">— Achat hors catalogue —</option></select>
+
     <label>Catégorie</label>
     <input id="aCat" list="catList" placeholder="Ex : Boissons, Charbon…">
     <datalist id="catList">
@@ -33,7 +37,7 @@
     <input id="aNom" type="text" placeholder="Ex : Carton de Coca">
 
     <div class="twoin">
-      <div><label>Quantité</label><input id="aQty" type="number" step="any" min="0" placeholder="Optionnel"></div>
+      <div><label>Quantité</label><input id="aQty" type="number" step="any" min="0" placeholder="0"></div>
       <div><label>Prix unitaire (GNF)</label><input id="aPU" type="number" min="0" placeholder="Optionnel"></div>
     </div>
 
@@ -58,7 +62,7 @@
   document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
   if (!initPage(["achats", "manager", "owner"])) throw new Error("non autorisé");
 
-  const st = { session:null, achats:[] };
+  const st = { session:null, achats:[], produits:[] };
   const locked = () => !st.session || st.session.statut !== "ouvert";
 
   async function ensureSession(){
@@ -72,11 +76,24 @@
 
   async function load(){
     st.session = await ensureSession();
+    const { data:prods } = await db.from("produits").select("id,nom,prix_achat,stock_actuel,unite_vente").not("actif","is",false).order("type").order("nom");
+    st.produits = prods || [];
+    $("aProduit").innerHTML = `<option value="">— Achat hors catalogue —</option>`
+      + st.produits.map(p=>`<option value="${escHtml(p.id)}" data-pa="${p.prix_achat||0}">${escHtml(p.nom)} (stock : ${p.stock_actuel||0})</option>`).join("");
     $("sub").textContent = frDate(todayISO()) + " · " + (locked() ? "caisse clôturée" : "caisse ouverte");
     $("lockBanner").style.display = locked() ? "" : "none";
-    if (locked()) document.querySelectorAll("#formCard input, #formCard button").forEach(el=>el.disabled=true);
+    if (locked()) document.querySelectorAll("#formCard input, #formCard button, #formCard select").forEach(el=>el.disabled=true);
     await loadAchats();
   }
+
+  $("aProduit").addEventListener("change", ()=>{
+    const opt = $("aProduit").selectedOptions[0];
+    if (!opt || !opt.value) return;
+    $("aNom").value = opt.textContent.replace(/\s*\(stock.*\)$/,"").trim();
+    const pa = Number(opt.dataset.pa);
+    if (pa > 0) $("aPU").value = pa;
+    autoMontant();
+  });
 
   async function loadAchats(){
     const { data } = await db.from("achats_session").select("*").eq("session_id", st.session.id).order("created_at");
@@ -88,7 +105,7 @@
     el.innerHTML = st.achats.map(a=>`
       <div class="ach" data-id="${escHtml(a.id)}">
         <div>
-          <div style="font-weight:600">${escHtml(a.produit_nom || a.categorie || "Achat")}</div>
+          <div style="font-weight:600">${escHtml(a.produit_nom || a.categorie || "Achat")}${a.produit_id?` <span class="tag tag-ok" style="font-size:10px">Stock +${a.qty||0}</span>`:""}</div>
           <div class="d">${escHtml(a.categorie || "")}${a.qty?` · ${a.qty}${a.prix_unitaire?" × "+gnf(a.prix_unitaire):""}`:""}</div>
         </div>
         <b>${gnf(a.montant)}</b>
@@ -108,19 +125,31 @@
     if (locked()) return;
     const montant = Math.round(Number($("aMontant").value) || 0);
     if (!(montant > 0)){ toast("Montant invalide", "ko"); return; }
+    const produitId = $("aProduit").value || null;
+    const qty = Number($("aQty").value) || null;
     const rec = {
       session_id: st.session.id,
+      produit_id: produitId,
       categorie: $("aCat").value.trim() || null,
       produit_nom: $("aNom").value.trim() || null,
       montant,
-      qty: Number($("aQty").value) || null,
+      qty,
       prix_unitaire: Math.round(Number($("aPU").value) || 0) || null,
     };
     const { error } = await db.from("achats_session").insert(rec);
     if (error){ toast("Erreur", "ko"); console.error(error); return; }
-    await ML.logAction("Achat "+gnf(montant)+(rec.produit_nom?" — "+rec.produit_nom:""));
+    // Incrémenter le stock si lié à un produit catalogue
+    if (produitId && qty > 0){
+      const prod = st.produits.find(p=>p.id===produitId);
+      if (prod){
+        await db.from("produits").update({ stock_actuel: (Number(prod.stock_actuel)||0) + qty }).eq("id", produitId);
+        prod.stock_actuel = (Number(prod.stock_actuel)||0) + qty;
+      }
+    }
+    await ML.logAction("Achat "+gnf(montant)+(rec.produit_nom?" — "+rec.produit_nom:"")+(produitId&&qty?" · stock +"+qty:""));
     ["aCat","aNom","aQty","aPU","aMontant"].forEach(id=>$(id).value="");
-    toast("Achat ajouté", "ok");
+    $("aProduit").value = "";
+    toast("Achat ajouté" + (produitId&&qty?" · stock mis à jour":""), "ok");
     loadAchats();
   });
 
@@ -128,8 +157,14 @@
     if (!ev.target.closest(".a-del")) return;
     const row = ev.target.closest(".ach"); const id = row.dataset.id;
     if (!confirm("Supprimer cet achat ?")) return;
+    const achat = st.achats.find(a=>a.id===id);
     const { error } = await db.from("achats_session").delete().eq("id", id);
     if (error){ toast("Erreur", "ko"); return; }
+    // Décrémenter le stock si lié à un produit
+    if (achat?.produit_id && achat?.qty > 0){
+      const { data:cur } = await db.from("produits").select("stock_actuel").eq("id", achat.produit_id).maybeSingle();
+      if (cur) await db.from("produits").update({ stock_actuel: Math.max(0,(cur.stock_actuel||0)-achat.qty) }).eq("id", achat.produit_id);
+    }
     await ML.logAction("Suppression achat");
     toast("Supprimé", "ok"); loadAchats();
   });

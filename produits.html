@@ -23,6 +23,13 @@
   <h1>Produits</h1>
   <div class="ml-sub">Catalogue & stock — le stock n'entre jamais dans les calculs financiers</div>
 
+  <!-- Stock critique -->
+  <div class="card" id="stockAlertCard" style="display:none;border:1px solid var(--ko)">
+    <h2 style="margin-top:0;color:var(--ko)">⚠ Stock critique</h2>
+    <div id="stockAlertList"></div>
+    <a href="achats.html" class="btn mt" style="width:auto">Enregistrer un achat</a>
+  </div>
+
   <!-- Formulaire ajout / édition -->
   <div class="card">
     <h2 style="margin-top:0" id="formTitle">Ajouter un produit</h2>
@@ -71,6 +78,17 @@
       .select("*").order("type").order("nom");
     const el = $("list");
     if (error) { el.innerHTML = `<p class="muted">Erreur de chargement.</p>`; return; }
+    // Stock critique
+    const bas = (data||[]).filter(p=>p.actif!==false && Number(p.stock_actuel||0)<=Number(p.stock_min||0));
+    const alertCard = $("stockAlertCard");
+    if (bas.length){
+      alertCard.style.display="";
+      $("stockAlertList").innerHTML = bas.map(p=>`
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)">
+          <span style="font-weight:600">${escHtml(p.nom)}</span>
+          <span class="tag tag-ko">Stock : ${Number(p.stock_actuel)||0} / min ${Number(p.stock_min)||0}</span>
+        </div>`).join("");
+    } else { alertCard.style.display="none"; }
     if (!data || !data.length) { el.innerHTML = `<p class="muted">Aucun produit. Ajoute le premier ci-dessus.</p>`; return; }
 
     let html = "";

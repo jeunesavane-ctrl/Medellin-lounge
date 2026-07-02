@@ -35,6 +35,12 @@
     <div id="pendingList"></div>
   </div>
 
+  <!-- Stock bas -->
+  <div class="card" id="stockCard" hidden>
+    <h2 style="margin-top:0">⚠ Stock bas</h2>
+    <div id="stockList"></div>
+  </div>
+
   <!-- Vue associé -->
   <div class="card" id="associeCard" hidden>
     <h2 style="margin-top:0">Espace associé</h2>
@@ -74,7 +80,7 @@
     $("sessionCard").hidden = false;
     $("pendingCard").hidden = false;
 
-    await Promise.all([loadKpis(), loadSession(), loadPending()]);
+    await Promise.all([loadKpis(), loadSession(), loadPending(), loadStockAlert()]);
     subscribeRealtime();
   }
 
@@ -122,6 +128,19 @@
       (s.statut !== "ouvert" ? ` · Écart espèces : <b>${gnf(s.ecart_especes || 0)}</b>` : "");
   }
 
+  async function loadStockAlert() {
+    const { data } = await db.from("produits").select("nom,stock_actuel,stock_min,unite_vente").not("actif","is",false);
+    const bas = (data||[]).filter(p => Number(p.stock_actuel||0) <= Number(p.stock_min||0));
+    const card = $("stockCard");
+    if (!bas.length){ card.hidden = true; return; }
+    card.hidden = false;
+    $("stockList").innerHTML = bas.map(p=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">
+        <span style="font-weight:600">${escHtml(p.nom)}</span>
+        <span class="tag tag-ko">Stock : ${Number(p.stock_actuel)||0} ${escHtml(p.unite_vente||"")}</span>
+      </div>`).join("");
+  }
+
   async function loadPending() {
     const { data: list } = await db
       .from("sessions_caisse").select("date,fond_caisse,ecart_especes")
@@ -149,6 +168,8 @@
         () => { loadKpis(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "achats_session" },
         () => { loadKpis(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "produits" },
+        () => { loadStockAlert(); })
       .subscribe();
   }
   window.addEventListener("beforeunload", () => { if (_sub) db.removeChannel(_sub); });

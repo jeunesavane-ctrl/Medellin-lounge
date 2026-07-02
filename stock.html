@@ -35,9 +35,9 @@
   <h1>Stock</h1>
 
   <div class="tab-row">
-    <button class="tab active" data-t="vue">Vue</button>
-    <button class="tab" data-t="mvts">Mouvements</button>
-    <button class="tab" data-t="inv">Inventaire</button>
+    <button class="tab active" onclick="goTab('vue')">Vue</button>
+    <button class="tab" onclick="goTab('mvts')">Mouvements</button>
+    <button class="tab" onclick="goTab('inv')">Inventaire</button>
   </div>
 
   <!-- ── Vue stock ── -->
@@ -252,16 +252,13 @@
   });
 
   // ── Tabs ──
-  const PANES = { vue:"pane-vue", mvts:"pane-mvts", inv:"pane-inv" };
-  document.querySelector(".tab-row").addEventListener("click", async (ev)=>{
-    const t = ev.target.closest(".tab"); if(!t) return;
-    document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===t));
-    Object.values(PANES).forEach(id=>$(id).hidden=true);
-    const key = t.dataset.t;
-    $(PANES[key]).hidden = false;
-    if(key==="mvts") await loadMvts();
-    if(key==="inv")  await loadInvHist();
-  });
+  var _PANES = { vue:"pane-vue", mvts:"pane-mvts", inv:"pane-inv" };
+  function goTab(key) {
+    document.querySelectorAll(".tab").forEach(function(b){ b.classList.toggle("active", b.getAttribute("onclick")==="goTab('"+key+"')"); });
+    Object.keys(_PANES).forEach(function(k){ var el=$((_PANES)[k]); if(el) el.hidden=(k!==key); });
+    if(key==="mvts") loadMvts();
+    if(key==="inv")  loadInvHist();
+  }
 
   $("fType").addEventListener("change",()=>renderVue($("fType").value));
   $("mfSearch").addEventListener("click", loadMvts);

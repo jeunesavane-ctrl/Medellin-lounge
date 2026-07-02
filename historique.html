@@ -87,18 +87,40 @@
     if (!ev.target.closest(".r-del")) return;
     const row = ev.target.closest(".rap"); const id = row.dataset.id;
     const rap = all.find(r=>r.id===id); if(!rap) return;
-    const isToday = rap.date === todayISO();
-    const msg = isToday
-      ? "Supprimer le rapport du JOUR ? La session sera rouverte (la serveuse pourra ressaisir)."
-      : "Supprimer ce rapport passé ? La session repassera en 'clôturée caissière' (revalidation possible).";
-    if (!confirm(msg)) return;
-    const { error } = await db.from("rapports").delete().eq("id", id);
-    if (error){ toast("Erreur de suppression","ko"); return; }
-    if (rap.session_id){
-      await db.from("sessions_caisse").update({ statut: isToday ? "ouvert" : "valide_caissier" }).eq("id", rap.session_id);
+    if (!confirm(`Supprimer le rapport du ${frDate(rap.date)} ?\n\nToutes les données du jour (ventes, achats, mouvements, sessions serveuses…) seront effacées définitivement.`)) return;
+
+    const sid = rap.session_id;
+
+    // 1. Restaurer le stock des ventes supprimées
+    if (sid){
+      const { data: ventes } = await db.from("ventes_session").select("produit_id,qty").eq("session_id", sid);
+      const stockMap = {};
+      (ventes||[]).forEach(v=>{ if(v.produit_id) stockMap[v.produit_id] = (stockMap[v.produit_id]||0)+(v.qty||0); });
+      await Promise.all(Object.entries(stockMap).map(async ([pid, qty])=>{
+        const { data:p } = await db.from("produits").select("stock_actuel").eq("id",pid).maybeSingle();
+        if (p) await db.from("produits").update({ stock_actuel:(p.stock_actuel||0)+qty }).eq("id",pid);
+      }));
     }
-    await ML.logAction(`Suppression rapport N°${rap.num} (${rap.date})`);
-    toast("Rapport supprimé","ok");
+
+    // 2. Supprimer toutes les données liées à la session
+    const deletes = [];
+    if (sid){
+      deletes.push(db.from("sessions_serveuse").delete().eq("session_caisse_id", sid));
+      deletes.push(db.from("ventes_session").delete().eq("session_id", sid));
+      deletes.push(db.from("sorties_chicha").delete().eq("session_id", sid));
+      deletes.push(db.from("verifications_staff").delete().eq("session_id", sid));
+      deletes.push(db.from("mouvements_caisse").delete().eq("session_id", sid));
+    }
+    deletes.push(db.from("achats").delete().eq("date", rap.date));
+    await Promise.all(deletes);
+
+    // 3. Supprimer le rapport puis la session caisse
+    const { error } = await db.from("rapports").delete().eq("id", id);
+    if (error){ toast("Erreur de suppression","ko"); console.error(error); return; }
+    if (sid) await db.from("sessions_caisse").delete().eq("id", sid);
+
+    await ML.logAction(`Suppression complète rapport N°${rap.num} (${rap.date})`);
+    toast("Rapport et toutes données du jour supprimés","ok");
     load();
   });
 

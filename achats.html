@@ -45,10 +45,14 @@
       <div id="chichaCalc" style="font-size:13px;color:var(--gold);font-weight:700;margin:4px 0 8px"></div>
     </div>
 
-    <div class="twoin" id="qtyRow">
-      <div><label>Quantité</label><input id="aQty" type="number" step="any" min="0" placeholder="0"></div>
-      <div><label>Prix unitaire (GNF)</label><input id="aPU" type="number" min="0" placeholder="Optionnel"></div>
+    <!-- Quantité visible seulement hors-chicha -->
+    <div id="qtyRow">
+      <label>Quantité</label><input id="aQty" type="number" step="any" min="0" placeholder="0">
     </div>
+
+    <!-- Prix : toujours visible — "par boîte" pour chicha, "unitaire" pour le reste -->
+    <label id="puLabel">Prix unitaire (GNF)</label>
+    <input id="aPU" type="number" min="0" placeholder="Optionnel">
 
     <label>Montant total (GNF)</label>
     <input id="aMontant" type="number" min="1" placeholder="0">
@@ -105,13 +109,12 @@
     const chicha = opt && opt.dataset.type === "chicha";
     $("chichaFields").style.display = chicha ? "" : "none";
     $("qtyRow").style.display = chicha ? "none" : "";
+    $("puLabel").textContent = chicha ? "Prix par boîte (GNF)" : "Prix unitaire (GNF)";
     $("aNbBoites").value = ""; $("aTetoesParBoite").value = "";
     $("chichaCalc").textContent = "";
-    $("aQty").value = "";
+    $("aQty").value = ""; $("aPU").value = "";
     if (!opt || !opt.value) return;
     $("aNom").value = opt.textContent.replace(/\s*\(stock.*\)$/,"").trim();
-    const pa = Number(opt.dataset.pa);
-    if (pa > 0) $("aPU").value = pa;
     autoMontant();
   });
 
@@ -121,11 +124,7 @@
     if (nb > 0 && tp > 0){
       const total = nb * tp;
       $("aQty").value = total;
-      const prixTete = Number($("aProduit").selectedOptions[0]?.dataset?.pa || 0);
-      const montantAuto = prixTete > 0 ? total * prixTete : 0;
-      if (montantAuto > 0) $("aMontant").value = montantAuto;
-      const montantTxt = montantAuto > 0 ? ` → ${gnf(montantAuto)}` : "";
-      $("chichaCalc").textContent = `${nb} boîte${nb>1?"s":""} × ${tp} têtes = ${total} têtes${montantTxt}`;
+      $("chichaCalc").textContent = `${nb} boîte${nb>1?"s":""} × ${tp} têtes = ${total} têtes`;
     } else {
       $("chichaCalc").textContent = "";
       $("aQty").value = "";
@@ -207,6 +206,7 @@
     $("chichaFields").style.display = "none";
     $("qtyRow").style.display = "";
     $("chichaCalc").textContent = "";
+    $("puLabel").textContent = "Prix unitaire (GNF)";
     toast("Achat ajouté" + (produitId&&qty?" · stock mis à jour":""), "ok");
     loadAchats();
   });

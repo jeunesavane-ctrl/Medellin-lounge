@@ -27,22 +27,21 @@
   }
   .login-logo {
     width: clamp(52px,8.5vh,68px); height: clamp(52px,8.5vh,68px); border-radius: 20px;
-    background: linear-gradient(145deg, var(--gold-soft), var(--gold-2) 70%);
-    color: #2a1d05; font-weight: 800; font-size: clamp(20px,3.6vh,27px); letter-spacing: .5px;
+    background: linear-gradient(145deg, #ffe070, #d4a020 70%);
+    color: #1a1000; font-weight: 800; font-size: clamp(20px,3.6vh,27px); letter-spacing: .5px;
     display: flex; align-items: center; justify-content: center; margin-bottom: clamp(12px,2.2vh,18px);
-    box-shadow: 0 10px 30px rgba(227,185,74,.40), inset 0 2px 0 rgba(255,255,255,.45);
+    box-shadow: 0 10px 30px rgba(227,185,74,.50), inset 0 2px 0 rgba(255,255,255,.55);
     animation: glow 4s ease-in-out infinite;
   }
   @keyframes glow {
-    0%,100% { box-shadow: 0 10px 30px rgba(227,185,74,.30), inset 0 2px 0 rgba(255,255,255,.45); }
-    50%     { box-shadow: 0 12px 44px rgba(227,185,74,.55), inset 0 2px 0 rgba(255,255,255,.45); }
+    0%,100% { box-shadow: 0 10px 30px rgba(227,185,74,.40), inset 0 2px 0 rgba(255,255,255,.45); }
+    50%     { box-shadow: 0 14px 50px rgba(227,185,74,.70), inset 0 2px 0 rgba(255,255,255,.55); }
   }
   .login-brand {
     font-size: clamp(21px,4.2vh,28px); font-weight: 800; letter-spacing: 3px; margin-bottom: 5px;
-    background: linear-gradient(90deg, #fff, var(--gold-soft));
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    color: #fff;
   }
-  .login-brand span { -webkit-text-fill-color: var(--gold); }
+  .login-brand span { color: var(--gold); }
   .login-tag { color: var(--muted); font-size: 13px; margin-bottom: clamp(14px,2.8vh,28px); text-align: center; letter-spacing: .3px; }
   .pin-dots { display: flex; gap: 15px; margin-bottom: clamp(14px,2.8vh,28px); min-height: 16px; }
   .pin-dots .dot {

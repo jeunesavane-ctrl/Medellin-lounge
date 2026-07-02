@@ -216,7 +216,7 @@
   $("kClear").addEventListener("click", clearPin);
   $("kOk").addEventListener("click", validate);
 
-  // Clavier physique (test sur ordinateur)
+  // Clavier physique
   document.addEventListener("keydown", (ev) => {
     if (ev.key >= "0" && ev.key <= "9") addDigit(ev.key);
     else if (ev.key === "Backspace") { pin = pin.slice(0, -1); renderDots(); }

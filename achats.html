@@ -36,7 +36,16 @@
     <label>Désignation</label>
     <input id="aNom" type="text" placeholder="Ex : Carton de Coca">
 
-    <div class="twoin">
+    <!-- Champs chicha : boîtes + têtes/boîte -->
+    <div id="chichaFields" style="display:none">
+      <div class="twoin">
+        <div><label>Nb de boîtes achetées</label><input id="aNbBoites" type="number" min="1" placeholder="Ex : 2"></div>
+        <div><label>Têtes par boîte</label><input id="aTetoesParBoite" type="number" min="1" placeholder="Ex : 50"></div>
+      </div>
+      <div id="chichaCalc" style="font-size:13px;color:var(--gold);font-weight:700;margin:4px 0 8px"></div>
+    </div>
+
+    <div class="twoin" id="qtyRow">
       <div><label>Quantité</label><input id="aQty" type="number" step="any" min="0" placeholder="0"></div>
       <div><label>Prix unitaire (GNF)</label><input id="aPU" type="number" min="0" placeholder="Optionnel"></div>
     </div>
@@ -76,24 +85,51 @@
 
   async function load(){
     st.session = await ensureSession();
-    const { data:prods } = await db.from("produits").select("id,nom,prix_achat,stock_actuel,unite_vente").not("actif","is",false).order("type").order("nom");
+    const { data:prods } = await db.from("produits").select("id,nom,type,prix_achat,stock_actuel,unite_vente").not("actif","is",false).order("type").order("nom");
     st.produits = prods || [];
     $("aProduit").innerHTML = `<option value="">— Achat hors catalogue —</option>`
-      + st.produits.map(p=>`<option value="${escHtml(p.id)}" data-pa="${p.prix_achat||0}">${escHtml(p.nom)} (stock : ${p.stock_actuel||0})</option>`).join("");
+      + st.produits.map(p=>`<option value="${escHtml(p.id)}" data-pa="${p.prix_achat||0}" data-type="${escHtml(p.type||"")}">${escHtml(p.nom)} (stock : ${p.stock_actuel||0})</option>`).join("");
     $("sub").textContent = frDate(todayISO()) + " · " + (locked() ? "caisse clôturée" : "caisse ouverte");
     $("lockBanner").style.display = locked() ? "" : "none";
     if (locked()) document.querySelectorAll("#formCard input, #formCard button, #formCard select").forEach(el=>el.disabled=true);
     await loadAchats();
   }
 
+  function isChichaSelected(){
+    const opt = $("aProduit").selectedOptions[0];
+    return opt && opt.dataset.type === "chicha";
+  }
+
   $("aProduit").addEventListener("change", ()=>{
     const opt = $("aProduit").selectedOptions[0];
+    const chicha = opt && opt.dataset.type === "chicha";
+    $("chichaFields").style.display = chicha ? "" : "none";
+    $("qtyRow").style.display = chicha ? "none" : "";
+    $("aNbBoites").value = ""; $("aTetoesParBoite").value = "";
+    $("chichaCalc").textContent = "";
+    $("aQty").value = "";
     if (!opt || !opt.value) return;
     $("aNom").value = opt.textContent.replace(/\s*\(stock.*\)$/,"").trim();
     const pa = Number(opt.dataset.pa);
     if (pa > 0) $("aPU").value = pa;
     autoMontant();
   });
+
+  function updateChichaCalc(){
+    const nb = Number($("aNbBoites").value);
+    const tp = Number($("aTetoesParBoite").value);
+    if (nb > 0 && tp > 0){
+      const total = nb * tp;
+      $("chichaCalc").textContent = `${nb} boîte${nb>1?"s":""} × ${tp} têtes = ${total} têtes en stock`;
+      $("aQty").value = total; // qty stocké = total têtes
+    } else {
+      $("chichaCalc").textContent = "";
+      $("aQty").value = "";
+    }
+    autoMontant();
+  }
+  $("aNbBoites").addEventListener("input", updateChichaCalc);
+  $("aTetoesParBoite").addEventListener("input", updateChichaCalc);
 
   async function loadAchats(){
     const { data } = await db.from("achats_session").select("*").eq("session_id", st.session.id).order("created_at");
@@ -113,10 +149,16 @@
       </div>`).join("");
   }
 
-  // auto-calcul montant depuis qty × prix
+  // auto-calcul montant
   function autoMontant(){
-    const q = Number($("aQty").value), pu = Number($("aPU").value);
-    if (q > 0 && pu > 0) $("aMontant").value = Math.round(q * pu);
+    const pu = Number($("aPU").value);
+    if (isChichaSelected()){
+      const nb = Number($("aNbBoites").value);
+      if (nb > 0 && pu > 0) $("aMontant").value = Math.round(nb * pu);
+    } else {
+      const q = Number($("aQty").value);
+      if (q > 0 && pu > 0) $("aMontant").value = Math.round(q * pu);
+    }
   }
   $("aQty").addEventListener("input", autoMontant);
   $("aPU").addEventListener("input", autoMontant);
@@ -126,12 +168,20 @@
     const montant = Math.round(Number($("aMontant").value) || 0);
     if (!(montant > 0)){ toast("Montant invalide", "ko"); return; }
     const produitId = $("aProduit").value || null;
-    const qty = Number($("aQty").value) || null;
+    const chicha = isChichaSelected();
+    const nbBoites = chicha ? Number($("aNbBoites").value)||0 : 0;
+    const tetesParBoite = chicha ? Number($("aTetoesParBoite").value)||0 : 0;
+    const qty = chicha ? (nbBoites * tetesParBoite) || null : Number($("aQty").value) || null;
+    if (chicha && (!nbBoites||!tetesParBoite)){ toast("Indique les boîtes et têtes/boîte","ko"); return; }
+    const nomBase = $("aNom").value.trim() || null;
+    const produit_nom = chicha && nbBoites && tetesParBoite
+      ? `${nomBase||"Chicha"} (${nbBoites} boîte${nbBoites>1?"s":""} × ${tetesParBoite} têtes)`
+      : nomBase;
     const rec = {
       session_id: st.session.id,
       produit_id: produitId,
       categorie: $("aCat").value.trim() || null,
-      produit_nom: $("aNom").value.trim() || null,
+      produit_nom,
       montant,
       qty,
       prix_unitaire: Math.round(Number($("aPU").value) || 0) || null,
@@ -148,8 +198,11 @@
       }
     }
     await ML.logAction("Achat "+gnf(montant)+(rec.produit_nom?" — "+rec.produit_nom:"")+(produitId&&qty?" · stock +"+qty:""));
-    ["aCat","aNom","aQty","aPU","aMontant"].forEach(id=>$(id).value="");
+    ["aCat","aNom","aQty","aPU","aMontant","aNbBoites","aTetoesParBoite"].forEach(id=>$(id).value="");
     $("aProduit").value = "";
+    $("chichaFields").style.display = "none";
+    $("qtyRow").style.display = "";
+    $("chichaCalc").textContent = "";
     toast("Achat ajouté" + (produitId&&qty?" · stock mis à jour":""), "ok");
     loadAchats();
   });

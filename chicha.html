@@ -13,6 +13,11 @@
                  padding:10px 14px; border-radius:10px; font-weight:600; margin-bottom:14px; }
   .info { background:rgba(224,161,58,.10); border:1px solid var(--warn); color:var(--warn);
           padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:12px; }
+  .cnt-row { display:grid; grid-template-columns:1fr auto auto; gap:8px; align-items:center;
+             padding:9px 0; border-bottom:1px solid var(--line); }
+  .cnt-row .d { font-size:12px; color:var(--muted); }
+  .cnt-badge { text-align:center; min-width:54px; }
+  .cnt-badge .d { margin-bottom:2px; }
 </style>
 </head><body>
 <div id="toast"></div>
@@ -22,6 +27,28 @@
   <div class="ml-sub" id="sub"></div>
   <div class="info">📦 Inventaire stock uniquement — n'entre jamais dans les calculs financiers.</div>
   <div id="lockBanner" class="lock-banner" style="display:none">🔒 Caisse clôturée — saisie fermée</div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Comptage machines & arômes</h2>
+    <div id="cntHistory"><p class="muted">Chargement…</p></div>
+    <div style="border-top:1px solid var(--line);margin:12px 0 14px"></div>
+    <div class="twoin">
+      <div><label>Chichaman</label>
+        <select id="ctEmp"><option value="">Sélectionner…</option></select>
+      </div>
+      <div><label>Moment</label>
+        <select id="ctMoment">
+          <option value="ouverture">Ouverture</option>
+          <option value="fermeture">Fermeture</option>
+        </select>
+      </div>
+    </div>
+    <div class="twoin">
+      <div><label>Nb machines</label><input id="ctMachines" type="number" min="0" value="0"></div>
+      <div><label>Boîtes d'arôme</label><input id="ctAromes" type="number" min="0" value="0"></div>
+    </div>
+    <button class="btn mt" id="saveCount">Enregistrer le comptage</button>
+  </div>
 
   <div class="card" id="formCard">
     <h2 style="margin-top:0">Nouvelle sortie</h2>
@@ -54,7 +81,8 @@
   const role = ML.getRole();
   const meId = ML.getExtra().employe_id || null;
   const canValidate = role === "manager" || role === "owner";
-  const st = { session:null, sorties:[], chichaProds:[], empMap:{} };
+  const st = { session:null, sorties:[], chichaProds:[], empMap:{}, inventaires:[], chichaEmps:[] };
+  function fmtHeure(ts){ if(!ts) return ""; const d=new Date(ts); return d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}); }
   const locked = () => !st.session || st.session.statut !== "ouvert";
 
   async function ensureSession(){
@@ -70,15 +98,38 @@
     st.session = await ensureSession();
     const [{ data:prods }, { data:emps }] = await Promise.all([
       db.from("produits").select("id,nom,stock_actuel").eq("type","chicha").not("actif","is",false).order("nom"),
-      db.from("employes").select("id,prenom,nom"),
+      db.from("employes").select("id,prenom,nom,role"),
     ]);
     st.chichaProds = prods || [];
     (emps||[]).forEach(e=>st.empMap[e.id]=((e.prenom?e.prenom+" ":"")+(e.nom||"")).trim());
+    st.chichaEmps = (emps||[]).filter(e=>e.role==="chicha");
+    const ctEmpEl = $("ctEmp");
+    ctEmpEl.innerHTML = `<option value="">Sélectionner…</option>`
+      + st.chichaEmps.map(e=>`<option value="${escHtml(e.id)}">${escHtml(st.empMap[e.id]||"")}</option>`).join("");
+    if (meId && st.chichaEmps.find(e=>e.id===meId)) ctEmpEl.value = meId;
+    // pré-sélectionner moment selon l'heure
+    $("ctMoment").value = new Date().getHours() < 14 ? "ouverture" : "fermeture";
     $("aromeList").innerHTML = st.chichaProds.map(p=>`<option value="${escHtml(p.nom)}">`).join("");
     $("sub").textContent = frDate(todayISO()) + " · " + (locked() ? "caisse clôturée" : "caisse ouverte");
     $("lockBanner").style.display = locked() ? "" : "none";
     if (locked()) document.querySelectorAll("#formCard input, #formCard button").forEach(el=>el.disabled=true);
-    await loadSorties();
+    await Promise.all([loadSorties(), loadComptage()]);
+  }
+
+  async function loadComptage(){
+    const { data } = await db.from("inventaire_chicha").select("*").eq("date", todayISO()).order("created_at");
+    st.inventaires = data || [];
+    const el = $("cntHistory");
+    if (!st.inventaires.length){ el.innerHTML = `<p class="muted">Aucun comptage enregistré aujourd'hui.</p>`; return; }
+    el.innerHTML = st.inventaires.map(inv=>`
+      <div class="cnt-row">
+        <div>
+          <div style="font-weight:600">${escHtml(st.empMap[inv.employe_id]||"—")}</div>
+          <div class="d">${inv.moment==="ouverture"?"🌅 Ouverture":"🌙 Fermeture"} · ${escHtml(fmtHeure(inv.created_at))}</div>
+        </div>
+        <div class="cnt-badge"><div class="d">Machines</div><b>${inv.nb_machines}</b></div>
+        <div class="cnt-badge"><div class="d">Arômes</div><b>${inv.nb_aromes}</b></div>
+      </div>`).join("");
   }
 
   async function loadSorties(){
@@ -96,6 +147,21 @@
         ${locked() ? "<span></span>" : `<button class="btn btn-sm btn-ghost s-del">✕</button>`}
       </div>`).join("");
   }
+
+  $("saveCount").addEventListener("click", async ()=>{
+    const empId = $("ctEmp").value;
+    if (!empId){ toast("Sélectionne le chichaman", "ko"); return; }
+    const moment = $("ctMoment").value;
+    const nb_machines = Math.round(Number($("ctMachines").value)||0);
+    const nb_aromes   = Math.round(Number($("ctAromes").value)||0);
+    const { error } = await db.from("inventaire_chicha").insert({
+      date: todayISO(), moment, employe_id: empId, nb_machines, nb_aromes,
+    });
+    if (error){ toast("Erreur", "ko"); console.error(error); return; }
+    await ML.logAction(`Comptage chicha ${moment} — ${st.empMap[empId]||""} : ${nb_machines} machines, ${nb_aromes} arômes`);
+    toast("Comptage enregistré", "ok");
+    loadComptage();
+  });
 
   $("addSortie").addEventListener("click", async ()=>{
     if (locked()) return;

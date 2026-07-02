@@ -5,8 +5,6 @@
 <title>Chicha — Medellin Lounge</title>
 <link rel="stylesheet" href="shared.css">
 <style>
-  .so { display:grid; grid-template-columns:1fr auto auto auto; gap:8px; align-items:center;
-        padding:10px 0; border-bottom:1px solid var(--line); }
   .so .d { font-size:12px; color:var(--muted); }
   .twoin { display:grid; grid-template-columns:2fr 1fr; gap:0 12px; }
   .lock-banner { background:rgba(232,85,78,.12); border:1px solid var(--ko); color:var(--ko);
@@ -18,6 +16,11 @@
   .cnt-row .d { font-size:12px; color:var(--muted); }
   .cnt-badge { text-align:center; min-width:54px; }
   .cnt-badge .d { margin-bottom:2px; }
+  .type-row { display:flex; gap:0; border-radius:10px; overflow:hidden; border:1px solid var(--line); margin-bottom:12px; }
+  .tt-btn { flex:1; padding:9px; border:none; background:var(--surface); color:var(--muted); font-weight:600; cursor:pointer; font-size:14px; transition:.15s; }
+  .tt-btn.active { background:var(--gold); color:#1a1000; }
+  .so { display:grid; grid-template-columns:1fr auto auto auto auto; gap:8px; align-items:center;
+        padding:10px 0; border-bottom:1px solid var(--line); }
 </style>
 </head><body>
 <div id="toast"></div>
@@ -52,6 +55,10 @@
 
   <div class="card" id="formCard">
     <h2 style="margin-top:0">Nouvelle sortie</h2>
+    <div class="type-row">
+      <button type="button" class="tt-btn active" data-t="vente" onclick="setSortieType('vente')">Vente</button>
+      <button type="button" class="tt-btn" data-t="cadeau" onclick="setSortieType('cadeau')">🎁 Cadeau client</button>
+    </div>
     <div class="twoin">
       <div>
         <label>Arôme</label>
@@ -77,6 +84,12 @@
 <script>
   document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
   if (!initPage(["chicha", "manager", "owner"])) throw new Error("non autorisé");
+
+  let sortieType = "vente";
+  function setSortieType(t) {
+    sortieType = t;
+    document.querySelectorAll(".tt-btn").forEach(b => b.classList.toggle("active", b.dataset.t === t));
+  }
 
   const role = ML.getRole();
   const meId = ML.getExtra().employe_id || null;
@@ -138,14 +151,18 @@
     $("totalQty").textContent = st.sorties.reduce((a,s)=>a+(s.qty||0),0) + " chicha";
     const el = $("list");
     if (!st.sorties.length){ el.innerHTML = `<p class="muted">Aucune sortie enregistrée.</p>`; return; }
-    el.innerHTML = st.sorties.map(s=>`
-      <div class="so" data-id="${escHtml(s.id)}">
+    el.innerHTML = st.sorties.map(s=>{
+      const isCadeau = s.type === "cadeau";
+      return `<div class="so" data-id="${escHtml(s.id)}">
         <div><div style="font-weight:600">${escHtml(s.arome || "—")} ×${s.qty}</div>
           <div class="d">${escHtml(st.empMap[s.employe_id] || "")}</div></div>
-        <span class="tag ${s.valide ? "tag-ok" : "tag-muted"}">${s.valide ? "Validé" : "En attente"}</span>
-        ${canValidate && !locked() ? `<button class="btn btn-sm btn-ghost s-val">${s.valide ? "Dévalider" : "Valider"}</button>` : "<span></span>"}
+        ${isCadeau
+          ? `<span class="tag" style="background:rgba(224,161,58,.2);color:var(--gold);font-weight:700">🎁 Cadeau</span>`
+          : `<span class="tag ${s.valide ? "tag-ok" : "tag-muted"}">${s.valide ? "Validé" : "En attente"}</span>`}
+        ${canValidate && !locked() && !isCadeau ? `<button class="btn btn-sm btn-ghost s-val">${s.valide ? "Dévalider" : "Valider"}</button>` : "<span></span>"}
         ${locked() ? "<span></span>" : `<button class="btn btn-sm btn-ghost s-del">✕</button>`}
-      </div>`).join("");
+      </div>`;
+    }).join("");
   }
 
   $("saveCount").addEventListener("click", async ()=>{
@@ -167,9 +184,10 @@
     if (locked()) return;
     const arome = $("cArome").value.trim();
     const qty = Math.max(1, Math.round(Number($("cQty").value) || 1));
+    const type = sortieType;
     if (!arome){ toast("Indique l'arôme", "ko"); return; }
     const { error } = await db.from("sorties_chicha").insert({
-      session_id: st.session.id, employe_id: meId, arome, qty, valide: false,
+      session_id: st.session.id, employe_id: meId, arome, qty, valide: false, type,
     });
     if (error){ toast("Erreur", "ko"); console.error(error); return; }
     // Décrément du stock chicha si l'arôme correspond à un produit
@@ -178,11 +196,13 @@
       const nv = (Number(prod.stock_actuel)||0) - qty;
       await db.from("produits").update({ stock_actuel: nv }).eq("id", prod.id);
       prod.stock_actuel = nv;
-      await stockMvt(prod.id, -qty, "chicha", `Sortie chicha ${arome} ×${qty}`);
+      await stockMvt(prod.id, -qty, type === "cadeau" ? "cadeau" : "chicha",
+        `${type === "cadeau" ? "Cadeau client" : "Sortie chicha"} ${arome} ×${qty}`);
     }
-    await ML.logAction(`Sortie chicha ${arome} ×${qty}`);
+    await ML.logAction(`${type === "cadeau" ? "Cadeau client" : "Sortie chicha"} ${arome} ×${qty}`);
     $("cArome").value = ""; $("cQty").value = 1;
-    toast("Sortie enregistrée", "ok");
+    setSortieType("vente");
+    toast(type === "cadeau" ? "Cadeau enregistré 🎁" : "Sortie enregistrée", "ok");
     loadSorties();
   });
 

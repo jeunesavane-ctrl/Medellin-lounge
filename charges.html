@@ -39,11 +39,17 @@
     <div class="form-grid">
       <div class="full"><label>Libellé</label><input id="cLabel" type="text" placeholder="Ex : Loyer du local"></div>
       <div><label>Catégorie</label>
-        <input id="cCat" list="catList" placeholder="Ex : Loyer">
-        <datalist id="catList">
-          <option value="Loyer"><option value="Électricité"><option value="Eau"><option value="Internet">
-          <option value="Entretien"><option value="Sécurité"><option value="Taxes"><option value="Divers">
-        </datalist>
+        <select id="cCat">
+          <option value="">— Catégorie —</option>
+          <option value="Loyer">Loyer</option>
+          <option value="Électricité">Électricité</option>
+          <option value="Eau">Eau</option>
+          <option value="Internet">Internet</option>
+          <option value="Entretien">Entretien</option>
+          <option value="Sécurité">Sécurité</option>
+          <option value="Taxes">Taxes</option>
+          <option value="Divers">Divers</option>
+        </select>
       </div>
       <div><label>Montant (GNF)</label><input id="cMontant" type="number" min="1" placeholder="0"></div>
       <div><label>Récurrence</label>

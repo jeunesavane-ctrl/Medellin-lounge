@@ -59,14 +59,7 @@
       <button type="button" class="tt-btn active" data-t="vente" onclick="setSortieType('vente')">Vente</button>
       <button type="button" class="tt-btn" data-t="cadeau" onclick="setSortieType('cadeau')">🎁 Cadeau client</button>
     </div>
-    <div class="twoin">
-      <div>
-        <label>Arôme</label>
-        <input id="cArome" list="aromeList" placeholder="Ex : Pomme, Menthe…">
-        <datalist id="aromeList"></datalist>
-      </div>
-      <div><label>Quantité</label><input id="cQty" type="number" min="1" value="1"></div>
-    </div>
+    <div><label>Quantité</label><input id="cQty" type="number" min="1" value="1"></div>
     <button class="btn" id="addSortie">Enregistrer la sortie</button>
   </div>
 
@@ -122,7 +115,6 @@
     if (meId && st.chichaEmps.find(e=>e.id===meId)) ctEmpEl.value = meId;
     // pré-sélectionner moment selon l'heure
     $("ctMoment").value = new Date().getHours() < 14 ? "ouverture" : "fermeture";
-    $("aromeList").innerHTML = st.chichaProds.map(p=>`<option value="${escHtml(p.nom)}">`).join("");
     $("sub").textContent = frDate(todayISO()) + " · " + (locked() ? "caisse clôturée" : "caisse ouverte");
     $("lockBanner").style.display = locked() ? "" : "none";
     if (locked()) document.querySelectorAll("#formCard input, #formCard button").forEach(el=>el.disabled=true);
@@ -154,7 +146,7 @@
     el.innerHTML = st.sorties.map(s=>{
       const isCadeau = s.type === "cadeau";
       return `<div class="so" data-id="${escHtml(s.id)}">
-        <div><div style="font-weight:600">${escHtml(s.arome || "—")} ×${s.qty}</div>
+        <div><div style="font-weight:600">Chicha ×${s.qty}</div>
           <div class="d">${escHtml(st.empMap[s.employe_id] || "")}</div></div>
         ${isCadeau
           ? `<span class="tag" style="background:rgba(224,161,58,.2);color:var(--gold);font-weight:700">🎁 Cadeau</span>`
@@ -182,25 +174,22 @@
 
   $("addSortie").addEventListener("click", async ()=>{
     if (locked()) return;
-    const arome = $("cArome").value.trim();
     const qty = Math.max(1, Math.round(Number($("cQty").value) || 1));
     const type = sortieType;
-    if (!arome){ toast("Indique l'arôme", "ko"); return; }
     const { error } = await db.from("sorties_chicha").insert({
-      session_id: st.session.id, employe_id: meId, arome, qty, valide: false, type,
+      session_id: st.session.id, employe_id: meId, qty, valide: false, type,
     });
     if (error){ toast("Erreur", "ko"); console.error(error); return; }
-    // Décrément du stock chicha si l'arôme correspond à un produit
-    const prod = st.chichaProds.find(p=>p.nom.toLowerCase() === arome.toLowerCase());
+    const prod = st.chichaProds[0];
     if (prod){
       const nv = (Number(prod.stock_actuel)||0) - qty;
       await db.from("produits").update({ stock_actuel: nv }).eq("id", prod.id);
       prod.stock_actuel = nv;
       await stockMvt(prod.id, -qty, type === "cadeau" ? "cadeau" : "chicha",
-        `${type === "cadeau" ? "Cadeau client" : "Sortie chicha"} ${arome} ×${qty}`);
+        `${type === "cadeau" ? "Cadeau client" : "Sortie chicha"} ×${qty}`);
     }
-    await ML.logAction(`${type === "cadeau" ? "Cadeau client" : "Sortie chicha"} ${arome} ×${qty}`);
-    $("cArome").value = ""; $("cQty").value = 1;
+    await ML.logAction(`${type === "cadeau" ? "Cadeau client" : "Sortie chicha"} ×${qty}`);
+    $("cQty").value = 1;
     setSortieType("vente");
     toast(type === "cadeau" ? "Cadeau enregistré 🎁" : "Sortie enregistrée", "ok");
     loadSorties();
@@ -213,14 +202,14 @@
       const sortie = st.sorties.find(s=>s.id===id);
       const { error } = await db.from("sorties_chicha").delete().eq("id", id);
       if (error){ toast("Erreur", "ko"); return; }
-      if (sortie?.arome && sortie?.qty){
-        const prod = st.chichaProds.find(p=>p.nom.toLowerCase()===sortie.arome.toLowerCase());
+      if (sortie?.qty){
+        const prod = st.chichaProds[0];
         if (prod){
           const nv = (Number(prod.stock_actuel)||0) + sortie.qty;
           await db.from("produits").update({ stock_actuel: nv }).eq("id", prod.id);
           prod.stock_actuel = nv;
           const srcType = sortie.type === "cadeau" ? "cadeau" : "chicha";
-          await stockMvt(prod.id, sortie.qty, srcType, `Annulation ${sortie.type === "cadeau" ? "cadeau client" : "sortie chicha"} ${sortie.arome} ×${sortie.qty}`);
+          await stockMvt(prod.id, sortie.qty, srcType, `Annulation ${sortie.type === "cadeau" ? "cadeau client" : "sortie chicha"} ×${sortie.qty}`);
         }
       }
       await ML.logAction("Suppression sortie chicha"); toast("Supprimé", "ok"); loadSorties();

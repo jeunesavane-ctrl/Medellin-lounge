@@ -178,6 +178,7 @@
       const nv = (Number(prod.stock_actuel)||0) - qty;
       await db.from("produits").update({ stock_actuel: nv }).eq("id", prod.id);
       prod.stock_actuel = nv;
+      await stockMvt(prod.id, -qty, "chicha", `Sortie chicha ${arome} ×${qty}`);
     }
     await ML.logAction(`Sortie chicha ${arome} ×${qty}`);
     $("cArome").value = ""; $("cQty").value = 1;
@@ -189,8 +190,18 @@
     const row = ev.target.closest(".so"); if(!row) return; const id = row.dataset.id;
     if (ev.target.closest(".s-del")){
       if (!confirm("Supprimer cette sortie ?")) return;
+      const sortie = st.sorties.find(s=>s.id===id);
       const { error } = await db.from("sorties_chicha").delete().eq("id", id);
       if (error){ toast("Erreur", "ko"); return; }
+      if (sortie?.arome && sortie?.qty){
+        const prod = st.chichaProds.find(p=>p.nom.toLowerCase()===sortie.arome.toLowerCase());
+        if (prod){
+          const nv = (Number(prod.stock_actuel)||0) + sortie.qty;
+          await db.from("produits").update({ stock_actuel: nv }).eq("id", prod.id);
+          prod.stock_actuel = nv;
+          await stockMvt(prod.id, sortie.qty, "chicha", `Annulation sortie chicha ${sortie.arome} ×${sortie.qty}`);
+        }
+      }
       await ML.logAction("Suppression sortie chicha"); toast("Supprimé", "ok"); loadSorties();
     } else if (ev.target.closest(".s-val")){
       const cur = st.sorties.find(s=>s.id===id);

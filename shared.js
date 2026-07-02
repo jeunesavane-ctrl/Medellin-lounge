@@ -154,6 +154,21 @@ const ML = {
 };
 
 // =====================================================================
+// STOCK — helper mouvement (enregistre chaque entrée/sortie/ajustement)
+// =====================================================================
+async function stockMvt(produit_id, qty, source, note, ref_id) {
+  if (!produit_id) return;
+  try {
+    await db.from("mouvements_stock").insert({
+      produit_id, qty,
+      type: qty > 0 ? "entree" : qty < 0 ? "sortie" : "ajustement",
+      source, note: note || null, reference_id: ref_id || null,
+      employe_id: ML.getExtra()?.employe_id || null,
+    });
+  } catch(e) { console.error("stockMvt:", e); }
+}
+
+// =====================================================================
 // NAVIGATION — 18 pages, filtrées par rôle (CDC §3)
 // =====================================================================
 const ROLE_LABEL = { owner: "Gestionnaire", manager: "Manager", caissier: "Caissier", staff: "Serveuse", chicha: "Chicha", achats: "Achats", associe: "Associé" };
@@ -170,6 +185,7 @@ const NAV = [
   { href: "avances.html",    label: "Avances",         icon: "ti-wallet",           roles: ["manager", "owner"], badge: "nbadge-avances" },
   { href: "charges.html",    label: "Charges",         icon: "ti-receipt",          roles: ["manager", "owner"] },
   { href: "produits.html",   label: "Produits",        icon: "ti-box",              roles: ["manager", "owner"] },
+  { href: "stock.html",      label: "Stock",           icon: "ti-package",          roles: ["manager", "owner"] },
   { href: "finances.html",   label: "Finances",        icon: "ti-chart-line",       roles: ["owner", "manager", "associe"] },
   { href: "bilan.html",      label: "Bilan",           icon: "ti-report-money",     roles: ["owner", "manager", "associe"] },
   { href: "associes.html",   label: "Associés",        icon: "ti-users-group",      roles: ["owner", "associe"] },

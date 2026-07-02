@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock — Medellin Lounge</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .tab-row { display:flex; gap:6px; margin-bottom:14px; }
+  .tab { flex:1; padding:9px; border-radius:10px; border:1px solid var(--line); background:var(--surface);
+         color:var(--muted); font-weight:600; cursor:pointer; font-size:14px; }
+  .tab.active { background:var(--gold); color:#1a1000; border-color:var(--gold); }
+  .srow { display:grid; grid-template-columns:1fr auto auto; gap:8px; align-items:center;
+          padding:9px 0; border-bottom:1px solid var(--line); }
+  .srow .nom { font-weight:700; }
+  .srow .meta { font-size:12px; color:var(--muted); }
+  .mrow { display:grid; grid-template-columns:auto 1fr auto auto; gap:8px; align-items:center;
+          padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .mrow .src { font-size:11px; color:var(--muted); }
+  .badge-ok  { background:rgba(72,199,142,.15); color:#27ae60; border-radius:6px; padding:2px 7px; font-size:11px; font-weight:700; }
+  .badge-bas { background:rgba(255,193,7,.15);  color:#e6ac00; border-radius:6px; padding:2px 7px; font-size:11px; font-weight:700; }
+  .badge-ko  { background:rgba(232,85,78,.15);  color:var(--ko); border-radius:6px; padding:2px 7px; font-size:11px; font-weight:700; }
+  .mvt-plus  { color:#27ae60; font-weight:700; }
+  .mvt-minus { color:var(--ko); font-weight:700; }
+  .inv-diff  { font-size:14px; font-weight:700; margin:8px 0; min-height:22px; }
+  .kpi-stock { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
+  .kpi-stock .kcard { background:var(--surface); border:1px solid var(--line); border-radius:12px;
+                      padding:12px; text-align:center; }
+  .kpi-stock .kval  { font-size:22px; font-weight:800; }
+  .kpi-stock .klbl  { font-size:11px; color:var(--muted); margin-top:2px; }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <h1>Stock</h1>
+
+  <div class="tab-row">
+    <button class="tab active" data-t="vue">Vue</button>
+    <button class="tab" data-t="mvts">Mouvements</button>
+    <button class="tab" data-t="inv">Inventaire</button>
+  </div>
+
+  <!-- ── Vue stock ── -->
+  <div id="pane-vue">
+    <div class="kpi-stock" id="kpiStock"></div>
+    <div class="card">
+      <div class="row between">
+        <h2 style="margin:0">Tous les produits</h2>
+        <select id="fType" style="width:auto;margin:0">
+          <option value="">Tous</option>
+          <option value="chicha">Chicha</option>
+          <option value="boisson">Boissons</option>
+          <option value="autre">Autres</option>
+        </select>
+      </div>
+      <div id="stockList" class="mt">Chargement…</div>
+    </div>
+  </div>
+
+  <!-- ── Mouvements ── -->
+  <div id="pane-mvts" hidden>
+    <div class="card">
+      <div class="grid grid-2">
+        <div><label>Produit</label>
+          <select id="mfProd" style="margin:0"><option value="">Tous</option></select>
+        </div>
+        <div><label>Type</label>
+          <select id="mfType" style="margin:0">
+            <option value="">Tous</option>
+            <option value="entree">Entrées</option>
+            <option value="sortie">Sorties</option>
+            <option value="ajustement">Ajustements</option>
+          </select>
+        </div>
+      </div>
+      <div class="mt"><label>Depuis</label>
+        <input id="mfFrom" type="date" style="margin:0">
+      </div>
+      <button class="btn mt btn-ghost" id="mfSearch" style="width:auto">Rechercher</button>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">Historique <span class="muted" id="mvtCount"></span></h2>
+      <div id="mvtList">Chargement…</div>
+    </div>
+  </div>
+
+  <!-- ── Inventaire / Ajustement ── -->
+  <div id="pane-inv" hidden>
+    <div class="card">
+      <h2 style="margin-top:0">Ajustement de stock</h2>
+      <p class="muted">Fais un comptage physique et entre le chiffre réel. Le système enregistre la différence.</p>
+      <label>Produit</label>
+      <select id="invProd"><option value="">Choisir un produit…</option></select>
+      <div id="invInfo" class="muted" style="font-size:13px;margin:6px 0"></div>
+      <label>Stock réel compté</label>
+      <input id="invCount" type="number" min="0" placeholder="0">
+      <div class="inv-diff" id="invDiff"></div>
+      <button class="btn" id="invSave" disabled>Enregistrer l'ajustement</button>
+    </div>
+    <div class="card" id="invHistCard">
+      <h2 style="margin-top:0">Derniers ajustements</h2>
+      <div id="invHistList">Chargement…</div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+  document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
+  if (!initPage(["manager","owner"])) throw new Error("non autorisé");
+
+  const TYPE_LBL = { chicha:"Chicha", boisson:"Boissons", autre:"Autres" };
+  let produits = [], empMap = {};
+
+  function fmtTs(ts){
+    if(!ts) return "";
+    const d = new Date(ts);
+    return d.toLocaleDateString("fr-FR",{day:"numeric",month:"short"}) + " " +
+           d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+  }
+
+  async function loadBase(){
+    const [{ data:prods }, { data:emps }] = await Promise.all([
+      db.from("produits").select("*").not("actif","is",false).order("type").order("nom"),
+      db.from("employes").select("id,prenom,nom"),
+    ]);
+    produits = prods||[];
+    (emps||[]).forEach(e=>empMap[e.id]=((e.prenom?e.prenom+" ":"")+e.nom).trim());
+    // Populate selects
+    const opts = produits.map(p=>`<option value="${escHtml(p.id)}">${escHtml(p.nom)}</option>`).join("");
+    $("mfProd").innerHTML = `<option value="">Tous</option>` + opts;
+    $("invProd").innerHTML = `<option value="">Choisir un produit…</option>` + opts;
+  }
+
+  // ── Vue stock ──
+  function renderVue(filter){
+    const list = filter ? produits.filter(p=>p.type===filter) : produits;
+    const ok  = produits.filter(p=>Number(p.stock_actuel||0)>Number(p.stock_min||0)).length;
+    const bas = produits.filter(p=>Number(p.stock_actuel||0)>0 && Number(p.stock_actuel||0)<=Number(p.stock_min||0)).length;
+    const vide= produits.filter(p=>Number(p.stock_actuel||0)<=0).length;
+    $("kpiStock").innerHTML = `
+      <div class="kcard"><div class="kval" style="color:#27ae60">${ok}</div><div class="klbl">OK</div></div>
+      <div class="kcard"><div class="kval" style="color:#e6ac00">${bas}</div><div class="klbl">Stock bas</div></div>
+      <div class="kcard"><div class="kval" style="color:var(--ko)">${vide}</div><div class="klbl">Vide / Critique</div></div>`;
+    const el = $("stockList");
+    if (!list.length){ el.innerHTML=`<p class="muted">Aucun produit.</p>`; return; }
+    let html="", lastType=null;
+    for(const p of list){
+      if(p.type!==lastType){ html+=`<h3>${escHtml(TYPE_LBL[p.type]||p.type)}</h3>`; lastType=p.type; }
+      const stk = Number(p.stock_actuel||0);
+      const min = Number(p.stock_min||0);
+      let badge, cls;
+      if(stk<=0){ badge="Vide"; cls="badge-ko"; }
+      else if(stk<=min){ badge="Bas"; cls="badge-bas"; }
+      else { badge="OK"; cls="badge-ok"; }
+      html+=`<div class="srow">
+        <div><div class="nom">${escHtml(p.nom)}</div>
+          <div class="meta">${escHtml(TYPE_LBL[p.type]||p.type)} · min ${min} ${escHtml(p.unite_vente||"")}</div></div>
+        <b>${stk} ${escHtml(p.unite_vente||"")}</b>
+        <span class="${cls}">${badge}</span>
+      </div>`;
+    }
+    el.innerHTML = html;
+  }
+
+  // ── Mouvements ──
+  async function loadMvts(){
+    let q = db.from("mouvements_stock").select("*").order("created_at",{ascending:false}).limit(200);
+    const pid = $("mfProd").value;
+    const tp  = $("mfType").value;
+    const fr  = $("mfFrom").value;
+    if(pid) q = q.eq("produit_id", pid);
+    if(tp)  q = q.eq("type", tp);
+    if(fr)  q = q.gte("created_at", fr+"T00:00:00");
+    const { data } = await q;
+    const rows = data||[];
+    $("mvtCount").textContent = `(${rows.length})`;
+    const el = $("mvtList");
+    if(!rows.length){ el.innerHTML=`<p class="muted">Aucun mouvement.</p>`; return; }
+    const prodMap = {};
+    produits.forEach(p=>prodMap[p.id]=p);
+    el.innerHTML = rows.map(m=>{
+      const prod = prodMap[m.produit_id];
+      const qtyStr = m.qty>0 ? `<span class="mvt-plus">+${m.qty}</span>` : `<span class="mvt-minus">${m.qty}</span>`;
+      const srcLbl = {achat:"Achat",vente:"Vente",chicha:"Chicha",inventaire:"Inventaire",correction:"Correction"}[m.source]||m.source;
+      return `<div class="mrow">
+        <div>${qtyStr}</div>
+        <div><div style="font-weight:600">${escHtml(prod?.nom||"—")}</div>
+          <div class="src">${srcLbl}${m.note?" · "+escHtml(m.note):""}${m.employe_id?" · "+escHtml(empMap[m.employe_id]||"")":""}</div></div>
+        <div class="muted" style="font-size:11px;text-align:right">${escHtml(fmtTs(m.created_at))}</div>
+        <span class="tag tag-muted" style="font-size:10px">${m.type==="entree"?"↑ Entrée":m.type==="sortie"?"↓ Sortie":"⇄ Ajust."}</span>
+      </div>`;
+    }).join("");
+  }
+
+  // ── Inventaire ──
+  async function loadInvHist(){
+    const { data } = await db.from("mouvements_stock").select("*").eq("source","inventaire").order("created_at",{ascending:false}).limit(20);
+    const rows = data||[];
+    const prodMap = {}; produits.forEach(p=>prodMap[p.id]=p);
+    const el = $("invHistList");
+    if(!rows.length){ el.innerHTML=`<p class="muted">Aucun ajustement enregistré.</p>`; return; }
+    el.innerHTML = rows.map(m=>{
+      const prod = prodMap[m.produit_id];
+      const diff = m.qty>0?`+${m.qty}`:String(m.qty);
+      return `<div class="srow">
+        <div><div class="nom">${escHtml(prod?.nom||"—")}</div>
+          <div class="meta">${escHtml(fmtTs(m.created_at))} · ${escHtml(empMap[m.employe_id]||"")}</div></div>
+        <b class="${m.qty>=0?"mvt-plus":"mvt-minus"}">${diff}</b>
+        <span class="tag tag-muted">Ajust.</span>
+      </div>`;
+    }).join("");
+  }
+
+  $("invProd").addEventListener("change", ()=>{
+    const p = produits.find(x=>x.id===$("invProd").value);
+    $("invCount").value = "";
+    $("invDiff").textContent = "";
+    $("invSave").disabled = true;
+    if(!p){ $("invInfo").textContent=""; return; }
+    $("invInfo").textContent = `Stock actuel système : ${Number(p.stock_actuel||0)} ${p.unite_vente||""}`;
+  });
+
+  $("invCount").addEventListener("input", ()=>{
+    const p = produits.find(x=>x.id===$("invProd").value);
+    if(!p){ $("invDiff").textContent=""; $("invSave").disabled=true; return; }
+    const reel = Number($("invCount").value);
+    if(isNaN(reel)||$("invCount").value===""){ $("invDiff").textContent=""; $("invSave").disabled=true; return; }
+    const diff = reel - Number(p.stock_actuel||0);
+    const el = $("invDiff");
+    if(diff===0){ el.textContent="Aucune différence."; el.style.color="var(--muted)"; $("invSave").disabled=true; }
+    else { el.textContent=(diff>0?"+":"")+diff+" "+( p.unite_vente||"")+" (ajustement)"; el.style.color=diff>0?"#27ae60":"var(--ko)"; $("invSave").disabled=false; }
+  });
+
+  $("invSave").addEventListener("click", async ()=>{
+    const p = produits.find(x=>x.id===$("invProd").value);
+    if(!p) return;
+    const reel = Number($("invCount").value);
+    const diff = reel - Number(p.stock_actuel||0);
+    if(diff===0) return;
+    if(!confirm(`Ajuster le stock de "${p.nom}" de ${Number(p.stock_actuel||0)} → ${reel} (diff ${diff>0?"+":""}${diff}) ?`)) return;
+    await db.from("produits").update({ stock_actuel: reel }).eq("id", p.id);
+    await stockMvt(p.id, diff, "inventaire", `Inventaire physique : ${Number(p.stock_actuel||0)} → ${reel}`);
+    p.stock_actuel = reel;
+    await ML.logAction(`Ajustement stock ${p.nom} : ${diff>0?"+":""}${diff}`);
+    toast("Ajustement enregistré","ok");
+    $("invCount").value=""; $("invDiff").textContent=""; $("invSave").disabled=true;
+    $("invInfo").textContent=`Stock actuel système : ${reel} ${p.unite_vente||""}`;
+    renderVue($("fType").value);
+    loadInvHist();
+  });
+
+  // ── Tabs ──
+  const PANES = { vue:"pane-vue", mvts:"pane-mvts", inv:"pane-inv" };
+  document.querySelector(".tab-row").addEventListener("click", async (ev)=>{
+    const t = ev.target.closest(".tab"); if(!t) return;
+    document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===t));
+    Object.values(PANES).forEach(id=>$(id).hidden=true);
+    const key = t.dataset.t;
+    $(PANES[key]).hidden = false;
+    if(key==="mvts") await loadMvts();
+    if(key==="inv")  await loadInvHist();
+  });
+
+  $("fType").addEventListener("change",()=>renderVue($("fType").value));
+  $("mfSearch").addEventListener("click", loadMvts);
+
+  async function init(){
+    await loadBase();
+    renderVue("");
+    loadInvHist();
+  }
+
+  init().catch(e=>{ console.error(e); toast("Erreur de chargement","ko"); });
+</script>
+</body></html>

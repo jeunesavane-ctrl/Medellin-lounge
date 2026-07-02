@@ -144,6 +144,7 @@
       if (prod){
         await db.from("produits").update({ stock_actuel: (Number(prod.stock_actuel)||0) + qty }).eq("id", produitId);
         prod.stock_actuel = (Number(prod.stock_actuel)||0) + qty;
+        await stockMvt(produitId, qty, "achat", `${rec.produit_nom||prod.nom} ×${qty} (achat)`);
       }
     }
     await ML.logAction("Achat "+gnf(montant)+(rec.produit_nom?" — "+rec.produit_nom:"")+(produitId&&qty?" · stock +"+qty:""));
@@ -163,7 +164,10 @@
     // Décrémenter le stock si lié à un produit
     if (achat?.produit_id && achat?.qty > 0){
       const { data:cur } = await db.from("produits").select("stock_actuel").eq("id", achat.produit_id).maybeSingle();
-      if (cur) await db.from("produits").update({ stock_actuel: Math.max(0,(cur.stock_actuel||0)-achat.qty) }).eq("id", achat.produit_id);
+      if (cur){
+        await db.from("produits").update({ stock_actuel: Math.max(0,(cur.stock_actuel||0)-achat.qty) }).eq("id", achat.produit_id);
+        await stockMvt(achat.produit_id, -achat.qty, "achat", `Annulation achat ×${achat.qty}`);
+      }
     }
     await ML.logAction("Suppression achat");
     toast("Supprimé", "ok"); loadAchats();

@@ -379,6 +379,7 @@
       }
       await db.from("produits").update({ stock_actuel: (Number(st.selProd.stock_actuel)||0) - qty }).eq("id", st.selProd.id);
       st.selProd.stock_actuel = (Number(st.selProd.stock_actuel)||0) - qty;
+      await stockMvt(st.selProd.id, -qty, "vente", `${st.selProd.nom} ×${qty} table ${st.curTable.label}`);
 
       await ML.logAction(`Vente ${st.selProd.nom} ×${qty} (${st.selPay}) table ${st.curTable.label}`);
       await loadVentes();
@@ -399,6 +400,7 @@
         const newStock = (Number(prod.stock_actuel)||0) + qty;
         await db.from("produits").update({ stock_actuel: newStock }).eq("id", produitId);
         prod.stock_actuel = newStock;
+        await stockMvt(produitId, qty, "vente", `Annulation vente ${vente?.produit_nom||""} ×${qty}`);
       }
     }
     await ML.logAction(`Suppression vente sur ${vente?.table_label||"?"}`);

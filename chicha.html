@@ -219,7 +219,8 @@
           const nv = (Number(prod.stock_actuel)||0) + sortie.qty;
           await db.from("produits").update({ stock_actuel: nv }).eq("id", prod.id);
           prod.stock_actuel = nv;
-          await stockMvt(prod.id, sortie.qty, "chicha", `Annulation sortie chicha ${sortie.arome} ×${sortie.qty}`);
+          const srcType = sortie.type === "cadeau" ? "cadeau" : "chicha";
+          await stockMvt(prod.id, sortie.qty, srcType, `Annulation ${sortie.type === "cadeau" ? "cadeau client" : "sortie chicha"} ${sortie.arome} ×${sortie.qty}`);
         }
       }
       await ML.logAction("Suppression sortie chicha"); toast("Supprimé", "ok"); loadSorties();

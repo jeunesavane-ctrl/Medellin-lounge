@@ -122,8 +122,8 @@ function goTab(key) {
 </script>
 <script>
   document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
-  if (!ML.guard(["manager","owner"])) { /* redirigé */ }
-  else { renderNav(); ML.initAutoLock(); loadNavBadges(); }
+  if (!ML.guard(["manager","owner"])) throw new Error("non autorisé");
+  renderNav(); ML.initAutoLock(); loadNavBadges();
 
   const TYPE_LBL = { chicha:"Chicha", boisson:"Boissons", autre:"Autres" };
   let produits = [], empMap = {};

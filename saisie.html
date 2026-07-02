@@ -382,7 +382,11 @@
       await stockMvt(st.selProd.id, -qty, "vente", `${st.selProd.nom} ×${qty} table ${st.curTable.label}`);
 
       await ML.logAction(`Vente ${st.selProd.nom} ×${qty} (${st.selPay}) table ${st.curTable.label}`);
+      st.selProd = null;
+      $("vQty").value = 1;
       await loadVentes();
+      renderProdPick();
+      renderTotal();
       renderTableVentes();
       toast("Vente enregistrée","ok");
     } catch(e) { console.error(e); toast("Erreur d'enregistrement","ko"); }

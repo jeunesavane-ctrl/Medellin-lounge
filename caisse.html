@@ -90,7 +90,7 @@
 
   const role = ML.getRole();
   const meId = ML.getExtra().employe_id || null;
-  const st = { session:null, ventes:[], verifs:{}, mvts:[], achats:0, empMap:{}, caissiers:[], sub:null, closing:false };
+  const st = { session:null, ventes:[], verifs:{}, mvts:[], achats:0, empMap:{}, caissiers:[], sessServs:[], sub:null, closing:false };
 
   const isAssoc = role === "associe";
   function isOpen(){ return st.session && st.session.statut === "ouvert"; }
@@ -107,16 +107,18 @@
 
   async function loadAll(){
     st.session = await ensureSession();
-    const [{ data:ventes }, { data:verifs }, { data:mvts }, { data:achats }, { data:emps }] = await Promise.all([
+    const [{ data:ventes }, { data:verifs }, { data:mvts }, { data:achats }, { data:emps }, { data:sessServs }] = await Promise.all([
       db.from("ventes_session").select("*").eq("session_id", st.session.id),
       db.from("verifications_staff").select("*").eq("session_id", st.session.id),
       db.from("mouvements_caisse").select("*").eq("session_id", st.session.id).order("created_at"),
       db.from("achats_session").select("montant").eq("session_id", st.session.id),
       db.from("employes").select("id,prenom,nom,role"),
+      db.from("sessions_serveuse").select("*").eq("date", todayISO()).order("created_at"),
     ]);
     st.ventes = ventes||[]; st.mvts = mvts||[];
     st.achats = (achats||[]).reduce((a,x)=>a+(x.montant||0),0);
     st.verifs = {}; (verifs||[]).forEach(v=>st.verifs[v.employe_id]=v);
+    st.sessServs = sessServs||[];
     st.empMap = {}; st.caissiers = [];
     (emps||[]).forEach(e=>{ st.empMap[e.id]=((e.prenom?e.prenom+" ":"")+(e.nom||"")).trim(); if(e.role==="caissier") st.caissiers.push(e); });
 
@@ -153,30 +155,30 @@
 
   // -------- Serveuses --------
   function declFor(empId){
-    const mine = st.ventes.filter(v=>v.employe_id===empId);
-    const esp = mine.filter(v=>v.paiement==="especes").reduce((a,v)=>a+(v.total||0),0);
-    const om  = mine.filter(v=>v.paiement==="om").reduce((a,v)=>a+(v.total||0),0);
-    const cred= mine.filter(v=>v.paiement==="credit").reduce((a,v)=>a+(v.total||0),0);
-    const byTable = {};
-    mine.forEach(v=>{ byTable[v.table_label||"—"] = (byTable[v.table_label||"—"]||0)+(v.total||0); });
-    return { esp, om, cred, byTable };
+    const empSess = st.sessServs.filter(s => s.employe_id === empId && s.statut === "validee");
+    const esp = empSess.reduce((a,s)=>a+(s.total_especes_declare||0),0);
+    const om  = empSess.reduce((a,s)=>a+(s.total_om_declare||0),0);
+    const hasActive = st.sessServs.some(s => s.employe_id === empId && s.statut === "en_cours");
+    return { esp, om, sessions: empSess, hasActive };
   }
 
   function renderServeuses(){
-    const ids = [...new Set(st.ventes.map(v=>v.employe_id).filter(Boolean))];
+    const ids = [...new Set(st.sessServs.map(s=>s.employe_id))];
     const el = $("servList");
-    if (!ids.length){ el.innerHTML = `<p class="muted">Aucune vente enregistrée aujourd'hui.</p>`; return; }
+    if (!ids.length){ el.innerHTML = `<p class="muted">Aucune session serveuse enregistrée aujourd'hui.</p>`; return; }
     el.innerHTML = ids.map(id=>{
       const d = declFor(id);
       const v = st.verifs[id] || {};
-      const tables = Object.entries(d.byTable).map(([t,m])=>`${escHtml(t)}: ${gnf(m)}`).join(" · ");
       return `<div class="serv" data-id="${escHtml(id)}">
         <h3>${escHtml(st.empMap[id]||"?")}</h3>
-        <div class="byt">${tables}</div>
-        <div class="decl">
-          <span>Déclaré espèces : <b>${gnf(d.esp)}</b></span>
-          <span>Déclaré OM : <b>${gnf(d.om)}</b></span>
-          ${d.cred?`<span class="muted">Crédit (exclu) : ${gnf(d.cred)}</span>`:""}
+        ${d.hasActive ? `<div style="color:var(--warn);font-size:12px;font-weight:700;margin-bottom:6px">⏳ Session en cours…</div>` : ""}
+        ${d.sessions.map((s,i)=>`
+          <div style="font-size:12px;color:var(--muted);margin-bottom:3px">
+            Session #${i+1} — Esp : <b>${gnf(s.total_especes_declare)}</b> · OM : <b>${gnf(s.total_om_declare)}</b>
+          </div>`).join("")}
+        <div class="decl" style="margin-top:8px">
+          <span>Total déclaré espèces : <b>${gnf(d.esp)}</b></span>
+          <span>Total déclaré OM : <b>${gnf(d.om)}</b></span>
         </div>
         <div class="twoin">
           <div><label>Reçu espèces</label><input class="r-esp" type="number" min="0" value="${v.recu_especes ?? ""}" placeholder="0"></div>
@@ -308,13 +310,21 @@
     finally { st.closing=false; $("closeBtn").disabled=false; }
   });
 
-  // -------- Realtime ventes --------
+  // -------- Realtime --------
+  async function reloadSessions(){
+    const { data } = await db.from("sessions_serveuse").select("*").eq("date", todayISO()).order("created_at");
+    st.sessServs = data||[]; renderServeuses(); recompute();
+  }
   function subscribe(){
     st.sub = db.channel("caisse")
       .on("postgres_changes",{event:"*",schema:"public",table:"ventes_session"}, async ()=>{
         const { data } = await db.from("ventes_session").select("*").eq("session_id", st.session.id);
         st.ventes = data||[]; renderServeuses(); recompute();
-      }).subscribe();
+      })
+      .on("postgres_changes",{event:"*",schema:"public",table:"sessions_serveuse"}, async (payload)=>{
+        if (payload.new && payload.new.date === todayISO()) await reloadSessions();
+      })
+      .subscribe();
   }
   window.addEventListener("beforeunload",()=>{ if(st.sub) db.removeChannel(st.sub); });
 

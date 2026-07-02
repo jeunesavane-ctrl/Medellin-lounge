@@ -13,21 +13,29 @@
   }
   .tbl .lab { font-size:20px; font-weight:800; }
   .tbl .who { font-size:11px; color:var(--muted); }
-  .tbl.mine   { border:2px solid var(--gold); background:rgba(201,162,74,.10); }
-  .tbl.other  { border:1px solid var(--gold); }
+  .tbl.mine  { border:2px solid var(--gold); background:rgba(201,162,74,.10); }
+  .tbl.other { border:1px solid var(--gold); }
   .tbl.locked { opacity:.5; cursor:not-allowed; }
   .lock-banner { background:rgba(232,85,78,.12); border:1px solid var(--ko); color:var(--ko);
                  padding:10px 14px; border-radius:10px; font-weight:600; margin-bottom:14px; }
   .prod-pick { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; }
-  .pp { border:1px solid var(--line); background:var(--surface-2); border-radius:10px; padding:10px;
-        cursor:pointer; }
+  .pp { border:1px solid var(--line); background:var(--surface-2); border-radius:10px; padding:10px; cursor:pointer; }
   .pp.sel { border-color:var(--gold); background:rgba(201,162,74,.12); }
   .pp .pn { font-weight:700; } .pp .pr { font-size:12px; color:var(--gold); }
-  .pay-opts { display:flex; gap:8px; }
-  .pay-opts .po { flex:1; text-align:center; padding:10px; border:1px solid var(--line);
+  .pay-opts { display:flex; gap:8px; flex-wrap:wrap; }
+  .pay-opts .po { flex:1; min-width:80px; text-align:center; padding:10px; border:1px solid var(--line);
                   border-radius:10px; cursor:pointer; font-weight:600; }
   .pay-opts .po.sel { border-color:var(--gold); background:rgba(201,162,74,.12); color:var(--gold); }
-  .vrow { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .vrow { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .vrow-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .tag-pending { color:var(--warn); font-size:11px; font-weight:700; }
+  .btn-enc { font-size:11px; padding:3px 8px; border-radius:6px; border:1px solid var(--gold-dim); background:transparent; color:var(--gold); cursor:pointer; }
+  .btn-enc:active { background:var(--gold); color:#1a1000; }
+  .btn-del { background:transparent; border:none; color:var(--ko); cursor:pointer; font-size:15px; line-height:1; padding:2px 5px; border-radius:4px; }
+  .btn-del:hover { background:rgba(242,107,98,.15); }
+  .sess-card { border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:8px; }
+  .sumrow { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .sumrow:last-child { border:none; }
 </style>
 </head><body>
 <div id="toast"></div>
@@ -37,42 +45,75 @@
   <div class="ml-sub" id="sub"></div>
   <div id="lockBanner" class="lock-banner" style="display:none">🔒 Caisse clôturée — lecture seule</div>
 
-  <!-- Vue grille des tables -->
-  <div id="viewGrid">
+  <!-- Vue : Accueil (pas de session active) -->
+  <div id="viewHome" style="display:none">
     <div class="card">
-      <h2 style="margin-top:0">Choisir une table</h2>
-      <div class="tables-grid" id="tablesGrid">Chargement…</div>
+      <h2 style="margin-top:0">Mes sessions du jour</h2>
+      <div id="pastSessions"><p class="muted">Aucune session aujourd'hui.</p></div>
+      <button class="btn mt" id="btnStartSession">+ Démarrer une nouvelle session</button>
     </div>
   </div>
 
-  <!-- Vue vente sur une table -->
+  <!-- Vue : Session active -->
+  <div id="viewSession" style="display:none">
+    <div class="card">
+      <div class="row between" style="margin-bottom:12px">
+        <div>
+          <div id="sessTitle" style="font-weight:800;font-size:16px">Session #1</div>
+          <div class="ml-sub" id="sessCount">0 vente(s)</div>
+        </div>
+        <button class="btn btn-sm" id="btnTerminer">Terminer ✓</button>
+      </div>
+      <div class="tables-grid" id="tablesGrid">Chargement…</div>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">Mes ventes de cette session</h2>
+      <div id="sessionVentes">—</div>
+    </div>
+  </div>
+
+  <!-- Vue : Vente sur une table -->
   <div id="viewVente" style="display:none">
     <div class="card">
       <div class="row between">
         <h2 style="margin:0">Table <span id="vTable" class="gold"></span></h2>
-        <button class="btn btn-ghost btn-sm" id="backGrid">← Tables</button>
+        <button class="btn btn-ghost btn-sm" id="backSession">← Retour</button>
       </div>
-
       <h3>Produit</h3>
       <div class="prod-pick" id="prodPick"></div>
-
       <div class="grid grid-2 mt">
         <div><label>Quantité</label><input id="vQty" type="number" min="1" value="1"></div>
         <div><label>&nbsp;</label><div id="vTotal" class="gold" style="font-size:20px;font-weight:800;padding-top:6px">—</div></div>
       </div>
-
       <label>Paiement</label>
       <div class="pay-opts" id="payOpts">
         <div class="po sel" data-p="especes">Espèces</div>
         <div class="po" data-p="om">Orange Money</div>
+        <div class="po" data-p="a_regler">À régler</div>
       </div>
-
       <button class="btn mt" id="addVente">Enregistrer la vente</button>
     </div>
-
     <div class="card">
       <h2 style="margin-top:0">Ventes sur cette table</h2>
       <div id="tableVentes">—</div>
+    </div>
+  </div>
+
+  <!-- Vue : Terminer / Valider session -->
+  <div id="viewTerminer" style="display:none">
+    <div class="card">
+      <div class="row between">
+        <h2 style="margin:0">Terminer ma session</h2>
+        <button class="btn btn-ghost btn-sm" id="backToSession">← Retour</button>
+      </div>
+      <p class="muted" style="margin:8px 0 14px">Clique sur Esp ou OM pour régler les ventes en attente.</p>
+      <div id="terminerVentes">—</div>
+      <div style="margin-top:14px">
+        <div class="sumrow"><span>Total Espèces</span><b class="gold" id="totEsp">0 GNF</b></div>
+        <div class="sumrow"><span>Total Orange Money</span><b class="gold" id="totOM">0 GNF</b></div>
+        <div class="sumrow"><span>À régler (non résolu)</span><b style="color:var(--warn)" id="totPending">0 GNF</b></div>
+      </div>
+      <button class="btn mt" id="btnValider">Valider ma session</button>
     </div>
   </div>
 </main>
@@ -84,170 +125,362 @@
   if (!initPage(["staff"])) throw new Error("non autorisé");
 
   const meId = ML.getExtra().employe_id;
-  const st = { session:null, tables:[], produits:[], empMap:{}, ventes:[], curTable:null, selProd:null, selPay:"especes", sub:null };
+  const st = {
+    sessionCaisse: null, sessionServeuse: null, allSessions: [],
+    tables: [], produits: [], empMap: {}, ventes: [],
+    curTable: null, selProd: null, selPay: "especes", sub: null
+  };
 
-  function locked(){ return !st.session || st.session.statut !== "ouvert"; }
+  function showView(id) {
+    ["viewHome","viewSession","viewVente","viewTerminer"].forEach(v => {
+      $(v).style.display = v === id ? "" : "none";
+    });
+  }
 
-  async function ensureSession(){
+  function locked() { return !st.sessionCaisse || st.sessionCaisse.statut !== "ouvert"; }
+
+  async function ensureSessionCaisse() {
     let { data, error } = await db.from("sessions_caisse").insert({ date: todayISO() }).select().single();
     if (error && error.code === "23505") {
       ({ data } = await db.from("sessions_caisse").select("*").eq("date", todayISO()).maybeSingle());
-      if (!data) throw new Error("Session introuvable après conflit d'insertion");
+      if (!data) throw new Error("Session caisse introuvable");
     } else if (error) { throw error; }
     return data;
   }
 
-  async function loadAll(){
-    st.session = await ensureSession();
-    const [{ data:tables }, { data:produits }, { data:emps }] = await Promise.all([
+  async function loadPage() {
+    st.sessionCaisse = await ensureSessionCaisse();
+    const [{ data:tables }, { data:produits }, { data:emps }, { data:sessions }] = await Promise.all([
       db.from("tables_lounge").select("*").not("actif","is",false).order("ordre"),
       db.from("produits").select("*").not("actif","is",false).order("type").order("nom"),
       db.from("employes").select("id,prenom,nom"),
+      db.from("sessions_serveuse").select("*").eq("date", todayISO()).eq("employe_id", meId).order("created_at"),
     ]);
     st.tables = tables||[]; st.produits = produits||[];
-    st.empMap = {}; (emps||[]).forEach(e=>st.empMap[e.id]=(e.prenom||e.nom||"").trim());
-    await loadVentes();
-    $("sub").textContent = frDate(todayISO()) + " · Caisse : " + (st.session.statut==="ouvert"?"ouverte":"clôturée");
+    st.empMap = {}; (emps||[]).forEach(e => st.empMap[e.id] = (e.prenom||e.nom||"").trim());
+    st.allSessions = sessions||[];
+
+    $("sub").textContent = frDate(todayISO()) + " · Caisse : " + (locked()?"clôturée":"ouverte");
     $("lockBanner").style.display = locked() ? "" : "none";
-    renderGrid();
+
+    const active = st.allSessions.find(s => s.statut === "en_cours");
+    if (active) {
+      st.sessionServeuse = active;
+      await loadVentes();
+      showView("viewSession");
+      renderSessionInfo();
+      renderGrid();
+      renderSessionVentes();
+    } else {
+      st.sessionServeuse = null;
+      st.ventes = [];
+      showView("viewHome");
+      renderPastSessions();
+    }
   }
 
-  async function loadVentes(){
-    const { data } = await db.from("ventes_session").select("*").eq("session_id", st.session.id);
+  async function loadVentes() {
+    const { data } = await db.from("ventes_session").select("*").eq("session_serveuse_id", st.sessionServeuse.id);
     st.ventes = data||[];
   }
 
-  function tblState(t){
+  // ── Accueil ──
+  function renderPastSessions() {
+    const validated = st.allSessions.filter(s => s.statut === "validee");
+    const el = $("pastSessions");
+    if (!validated.length) { el.innerHTML = `<p class="muted">Aucune session aujourd'hui.</p>`; return; }
+    el.innerHTML = validated.map((s, i) => `
+      <div class="sess-card">
+        <div class="row between">
+          <span style="font-weight:800">Session #${i+1}</span>
+          <span class="tag tag-ok">Validée</span>
+        </div>
+        <div style="margin-top:6px;font-size:13px;color:var(--muted)">
+          Esp : <b>${gnf(s.total_especes_declare)}</b> · OM : <b>${gnf(s.total_om_declare)}</b>
+        </div>
+      </div>`).join("");
+  }
+
+  $("btnStartSession").addEventListener("click", async () => {
+    if (locked()) { toast("Caisse clôturée","ko"); return; }
+    const { data, error } = await db.from("sessions_serveuse").insert({
+      date: todayISO(), employe_id: meId, statut: "en_cours"
+    }).select().single();
+    if (error) { toast("Erreur démarrage session","ko"); return; }
+    st.sessionServeuse = data;
+    st.allSessions.push(data);
+    st.ventes = [];
+    showView("viewSession");
+    renderSessionInfo();
+    renderGrid();
+    renderSessionVentes();
+  });
+
+  // ── Session active ──
+  function renderSessionInfo() {
+    const idx = st.allSessions.findIndex(s => s.id === st.sessionServeuse.id);
+    $("sessTitle").textContent = `Session #${idx + 1}`;
+    $("sessCount").textContent = `${st.ventes.length} vente(s)`;
+  }
+
+  function tblState(t) {
     if (locked()) return "locked";
     if (t.ouverte_par === meId) return "mine";
     if (t.ouverte_par) return "other";
     return "free";
   }
 
-  function renderGrid(){
+  function renderGrid() {
     const el = $("tablesGrid");
-    if (!st.tables.length){ el.innerHTML = `<p class="muted">Aucune table active. Demande à l'owner d'en créer (Paramètres).</p>`; return; }
-    el.innerHTML = st.tables.map(t=>{
+    if (!st.tables.length) { el.innerHTML = `<p class="muted">Aucune table active. (Paramètres)</p>`; return; }
+    el.innerHTML = st.tables.map(t => {
       const stt = tblState(t);
-      const who = t.ouverte_par ? (stt==="mine" ? "moi" : escHtml(st.empMap[t.ouverte_par]||"…")) : "libre";
+      const who = t.ouverte_par ? (stt==="mine"?"moi":escHtml(st.empMap[t.ouverte_par]||"…")) : "libre";
       const cls = stt==="mine"?"mine":stt==="other"?"other":stt==="locked"?"locked":"";
       return `<div class="tbl ${cls}" data-label="${escHtml(t.label)}">
-                <div class="lab">${escHtml(t.label)}</div>
-                <div class="who">${who}</div>
-              </div>`;
+        <div class="lab">${escHtml(t.label)}</div>
+        <div class="who">${who}</div>
+      </div>`;
     }).join("");
   }
 
-  // --- Sélection d'une table ---
-  $("tablesGrid").addEventListener("click",(ev)=>{
-    const c = ev.target.closest(".tbl"); if(!c) return;
-    if (locked()){ toast("Caisse clôturée","ko"); return; }
-    st.curTable = st.tables.find(t=>t.label===c.dataset.label);
-    st.selProd = null; st.selPay = "especes";
-    openVente();
-  });
-  $("backGrid").addEventListener("click",()=>{ $("viewVente").style.display="none"; $("viewGrid").style.display=""; renderGrid(); });
-
-  function openVente(){
-    $("viewGrid").style.display="none"; $("viewVente").style.display="";
+  $("tablesGrid").addEventListener("click", (ev) => {
+    const c = ev.target.closest(".tbl"); if (!c) return;
+    if (locked()) { toast("Caisse clôturée","ko"); return; }
+    const t = st.tables.find(t => t.label === c.dataset.label);
+    if (tblState(t) === "other") { toast("Table occupée par une collègue","ko"); return; }
+    st.curTable = t; st.selProd = null; st.selPay = "especes";
+    showView("viewVente");
     $("vTable").textContent = st.curTable.label;
     $("vQty").value = 1;
-    $("payOpts").querySelectorAll(".po").forEach(p=>p.classList.toggle("sel",p.dataset.p==="especes"));
+    $("payOpts").querySelectorAll(".po").forEach(p => p.classList.toggle("sel", p.dataset.p==="especes"));
     renderProdPick(); renderTotal(); renderTableVentes();
+  });
+
+  function renderSessionVentes() {
+    const el = $("sessionVentes");
+    if (!st.ventes.length) { el.innerHTML = `<p class="muted">Aucune vente pour l'instant.</p>`; renderSessionInfo(); return; }
+    const esp  = st.ventes.filter(v=>v.paiement==="especes").reduce((a,v)=>a+(v.total||0),0);
+    const om   = st.ventes.filter(v=>v.paiement==="om").reduce((a,v)=>a+(v.total||0),0);
+    const pend = st.ventes.filter(v=>v.paiement==="a_regler").reduce((a,v)=>a+(v.total||0),0);
+    el.innerHTML = st.ventes.map(v => {
+      const isPending = v.paiement === "a_regler";
+      return `<div class="vrow">
+        <span>${escHtml(v.produit_nom)} ×${v.qty} <span class="muted">(${escHtml(v.table_label||"")})</span>
+          ${isPending ? '<span class="tag-pending"> À régler</span>' : `<span class="muted"> ${v.paiement==="especes"?"Esp":"OM"}</span>`}
+        </span>
+        <span class="vrow-actions">
+          <b>${gnf(v.total)}</b>
+          <button class="btn-del" data-id="${escHtml(v.id)}" data-prodid="${escHtml(v.produit_id||"")}" data-qty="${v.qty}">✕</button>
+        </span>
+      </div>`;
+    }).join("") +
+    `<div class="vrow" style="border:none;margin-top:4px;font-size:13px">
+      <span>Esp: <b class="gold">${gnf(esp)}</b> · OM: <b class="gold">${gnf(om)}</b>${pend?` · <span style="color:var(--warn)">À régler: ${gnf(pend)}</span>`:""}</span>
+      <b class="gold">${gnf(esp+om+pend)}</b>
+    </div>`;
+    renderSessionInfo();
   }
 
-  function renderProdPick(){
-    $("prodPick").innerHTML = st.produits.map(p=>`
+  $("sessionVentes").addEventListener("click", async (ev) => {
+    const del = ev.target.closest(".btn-del");
+    if (del) await deleteVente(del.dataset.id, del.dataset.prodid, Number(del.dataset.qty));
+  });
+
+  $("btnTerminer").addEventListener("click", () => {
+    if (!st.ventes.length) { toast("Aucune vente dans cette session","ko"); return; }
+    showView("viewTerminer");
+    renderTerminer();
+  });
+
+  $("backToSession").addEventListener("click", () => showView("viewSession"));
+
+  // ── Table / Vente ──
+  $("backSession").addEventListener("click", async () => {
+    await loadVentes(); renderSessionVentes(); showView("viewSession");
+  });
+
+  function renderProdPick() {
+    $("prodPick").innerHTML = st.produits.map(p => `
       <div class="pp${st.selProd&&st.selProd.id===p.id?" sel":""}" data-id="${escHtml(p.id)}">
         <div class="pn">${escHtml(p.nom)}</div><div class="pr">${gnf(p.prix_defaut||0)}</div>
-      </div>`).join("") || `<p class="muted">Aucun produit. (Paramètres → Produits)</p>`;
+      </div>`).join("") || `<p class="muted">Aucun produit.</p>`;
   }
-  $("prodPick").addEventListener("click",(ev)=>{
-    const c = ev.target.closest(".pp"); if(!c) return;
-    st.selProd = st.produits.find(p=>p.id===c.dataset.id);
+
+  $("prodPick").addEventListener("click", (ev) => {
+    const c = ev.target.closest(".pp"); if (!c) return;
+    st.selProd = st.produits.find(p => p.id === c.dataset.id);
     renderProdPick(); renderTotal();
   });
 
-  $("payOpts").addEventListener("click",(ev)=>{
-    const c = ev.target.closest(".po"); if(!c) return;
+  $("payOpts").addEventListener("click", (ev) => {
+    const c = ev.target.closest(".po"); if (!c) return;
     st.selPay = c.dataset.p;
-    $("payOpts").querySelectorAll(".po").forEach(p=>p.classList.toggle("sel",p===c));
+    $("payOpts").querySelectorAll(".po").forEach(p => p.classList.toggle("sel", p===c));
   });
 
   $("vQty").addEventListener("input", renderTotal);
-  function renderTotal(){
+  function renderTotal() {
     const q = Math.max(1, Number($("vQty").value)||1);
     $("vTotal").textContent = st.selProd ? gnf((st.selProd.prix_defaut||0)*q) : "—";
   }
 
-  function renderTableVentes(){
-    const list = st.ventes.filter(v=>v.table_label===st.curTable.label);
+  function renderTableVentes() {
+    const list = st.ventes.filter(v => v.table_label === st.curTable.label);
     const el = $("tableVentes");
-    if(!list.length){ el.innerHTML = `<p class="muted">Aucune vente sur cette table.</p>`; return; }
+    if (!list.length) { el.innerHTML = `<p class="muted">Aucune vente sur cette table.</p>`; return; }
     const tot = list.reduce((a,v)=>a+(v.total||0),0);
-    el.innerHTML = list.map(v=>`
-      <div class="vrow"><span>${escHtml(v.produit_nom)} ×${v.qty} <span class="muted">(${v.paiement})</span> ${v.employe_id===meId?"":'<span class="tag tag-muted">autre</span>'}</span><b>${gnf(v.total)}</b></div>`
-    ).join("") + `<div class="vrow" style="border:none"><b>Total table</b><b class="gold">${gnf(tot)}</b></div>`;
+    el.innerHTML = list.map(v => {
+      const isPending = v.paiement === "a_regler";
+      return `<div class="vrow">
+        <span>${escHtml(v.produit_nom)} ×${v.qty}
+          ${isPending ? '<span class="tag-pending"> À régler</span>' : `<span class="muted"> (${v.paiement==="especes"?"Esp":"OM"})</span>`}
+        </span>
+        <span class="vrow-actions">
+          <b>${gnf(v.total)}</b>
+          <button class="btn-del" data-id="${escHtml(v.id)}" data-prodid="${escHtml(v.produit_id||"")}" data-qty="${v.qty}">✕</button>
+        </span>
+      </div>`;
+    }).join("") + `<div class="vrow" style="border:none"><b>Total table</b><b class="gold">${gnf(tot)}</b></div>`;
   }
 
-  // --- Enregistrer une vente ---
+  $("tableVentes").addEventListener("click", async (ev) => {
+    const del = ev.target.closest(".btn-del");
+    if (del) await deleteVente(del.dataset.id, del.dataset.prodid, Number(del.dataset.qty));
+  });
+
   let saving = false;
-  $("addVente").addEventListener("click", async ()=>{
+  $("addVente").addEventListener("click", async () => {
     if (saving) return;
-    if (locked()){ toast("Caisse clôturée","ko"); return; }
-    if (!st.selProd){ toast("Choisis un produit","ko"); return; }
+    if (locked()) { toast("Caisse clôturée","ko"); return; }
+    if (!st.selProd) { toast("Choisis un produit","ko"); return; }
     const qty = Math.max(1, Math.round(Number($("vQty").value)||1));
     const prix = st.selProd.prix_defaut||0;
-    const total = prix*qty;
-    if ((Number(st.selProd.stock_actuel)||0) < qty){ toast("Stock insuffisant pour cette quantité","ko"); return; }
+    const total = prix * qty;
+    if ((Number(st.selProd.stock_actuel)||0) < qty) { toast("Stock insuffisant","ko"); return; }
     saving = true; $("addVente").disabled = true;
     try {
       const { error } = await db.from("ventes_session").insert({
-        session_id: st.session.id, employe_id: meId,
+        session_id: st.sessionCaisse.id,
+        session_serveuse_id: st.sessionServeuse.id,
+        employe_id: meId,
         produit_id: st.selProd.id, produit_nom: st.selProd.nom,
         qty, prix_unitaire: prix, total, paiement: st.selPay,
         table_label: st.curTable.label,
       });
       if (error) throw error;
 
-      // Ouverture table si libre (ouverte_par IS NULL)
-      if (!st.curTable.ouverte_par){
+      if (!st.curTable.ouverte_par) {
         const { data:td } = await db.from("tables_lounge").select("ouverte_par").eq("label", st.curTable.label).single();
-        if (td && !td.ouverte_par){
+        if (td && !td.ouverte_par) {
           await db.from("tables_lounge").update({ ouverte_par: meId }).eq("label", st.curTable.label);
           st.curTable.ouverte_par = meId;
         }
       }
-      // Décrément du stock (inventaire)
       await db.from("produits").update({ stock_actuel: (Number(st.selProd.stock_actuel)||0) - qty }).eq("id", st.selProd.id);
       st.selProd.stock_actuel = (Number(st.selProd.stock_actuel)||0) - qty;
 
-      await ML.logAction(`Vente ${st.selProd.nom} ×${qty} (${st.selPay}) sur ${st.curTable.label}`);
+      await ML.logAction(`Vente ${st.selProd.nom} ×${qty} (${st.selPay}) table ${st.curTable.label}`);
       await loadVentes();
       renderTableVentes();
-      toast("Vente enregistrée", "ok");
-    } catch(e){
-      console.error(e); toast("Erreur d'enregistrement", "ko");
-    } finally {
-      saving = false; $("addVente").disabled = false;
-    }
+      toast("Vente enregistrée","ok");
+    } catch(e) { console.error(e); toast("Erreur d'enregistrement","ko"); }
+    finally { saving = false; $("addVente").disabled = false; }
   });
 
-  // --- Realtime : verrou si la caisse clôture ---
-  function subscribe(){
+  async function deleteVente(id, produitId, qty) {
+    if (!confirm("Supprimer cette vente ?")) return;
+    const vente = st.ventes.find(v => v.id === id);
+    const { error } = await db.from("ventes_session").delete().eq("id", id);
+    if (error) { toast("Erreur suppression","ko"); return; }
+    if (produitId) {
+      const prod = st.produits.find(p => p.id === produitId);
+      if (prod) {
+        const newStock = (Number(prod.stock_actuel)||0) + qty;
+        await db.from("produits").update({ stock_actuel: newStock }).eq("id", produitId);
+        prod.stock_actuel = newStock;
+      }
+    }
+    await ML.logAction(`Suppression vente sur ${vente?.table_label||"?"}`);
+    await loadVentes();
+    renderTableVentes();
+    renderSessionVentes();
+    toast("Vente supprimée","ok");
+  }
+
+  // ── Terminer / Valider ──
+  function renderTerminer() {
+    const el = $("terminerVentes");
+    if (!st.ventes.length) { el.innerHTML = `<p class="muted">Aucune vente.</p>`; return; }
+    el.innerHTML = st.ventes.map(v => {
+      const isPending = v.paiement === "a_regler";
+      return `<div class="vrow">
+        <span>${escHtml(v.produit_nom)} ×${v.qty} <span class="muted">(${escHtml(v.table_label||"")})</span></span>
+        <span class="vrow-actions">
+          <b>${gnf(v.total)}</b>
+          ${isPending
+            ? `<button class="btn-enc" data-id="${escHtml(v.id)}" data-p="especes">Esp</button><button class="btn-enc" data-id="${escHtml(v.id)}" data-p="om">OM</button>`
+            : `<span class="muted" style="font-size:12px">${v.paiement==="especes"?"Esp":"OM"}</span>`}
+        </span>
+      </div>`;
+    }).join("");
+    updateTotals();
+  }
+
+  function updateTotals() {
+    const esp  = st.ventes.filter(v=>v.paiement==="especes").reduce((a,v)=>a+(v.total||0),0);
+    const om   = st.ventes.filter(v=>v.paiement==="om").reduce((a,v)=>a+(v.total||0),0);
+    const pend = st.ventes.filter(v=>v.paiement==="a_regler").reduce((a,v)=>a+(v.total||0),0);
+    $("totEsp").textContent = gnf(esp);
+    $("totOM").textContent  = gnf(om);
+    $("totPending").textContent = gnf(pend);
+  }
+
+  $("terminerVentes").addEventListener("click", async (ev) => {
+    const enc = ev.target.closest(".btn-enc");
+    if (!enc) return;
+    const { error } = await db.from("ventes_session").update({ paiement: enc.dataset.p }).eq("id", enc.dataset.id);
+    if (error) { toast("Erreur","ko"); return; }
+    const v = st.ventes.find(v => v.id === enc.dataset.id);
+    if (v) v.paiement = enc.dataset.p;
+    renderTerminer();
+    toast(enc.dataset.p === "especes" ? "Espèces ✓" : "OM ✓","ok");
+  });
+
+  let validating = false;
+  $("btnValider").addEventListener("click", async () => {
+    if (validating) return;
+    const pending = st.ventes.filter(v => v.paiement === "a_regler");
+    if (pending.length && !confirm(`${pending.length} vente(s) encore "À régler". Valider quand même ?`)) return;
+    validating = true; $("btnValider").disabled = true;
+    try {
+      const esp = st.ventes.filter(v=>v.paiement==="especes").reduce((a,v)=>a+(v.total||0),0);
+      const om  = st.ventes.filter(v=>v.paiement==="om").reduce((a,v)=>a+(v.total||0),0);
+      const { error } = await db.from("sessions_serveuse").update({
+        statut: "validee", total_especes_declare: esp, total_om_declare: om
+      }).eq("id", st.sessionServeuse.id);
+      if (error) throw error;
+      await ML.logAction(`Session validée — Esp ${gnf(esp)}, OM ${gnf(om)}`);
+      toast("Session validée ✓","ok");
+      st.sessionServeuse = null; st.ventes = [];
+      await loadPage();
+    } catch(e) { console.error(e); toast("Erreur","ko"); }
+    finally { validating = false; $("btnValider").disabled = false; }
+  });
+
+  // ── Realtime ──
+  function subscribe() {
     st.sub = db.channel("saisie")
-      .on("postgres_changes",{event:"*",schema:"public",table:"sessions_caisse"}, (payload)=>{
-        if (payload.new && payload.new.date === todayISO()){
-          st.session = payload.new;
+      .on("postgres_changes",{event:"*",schema:"public",table:"sessions_caisse"}, (payload) => {
+        if (payload.new && payload.new.date === todayISO()) {
+          st.sessionCaisse = payload.new;
           $("lockBanner").style.display = locked() ? "" : "none";
           $("sub").textContent = frDate(todayISO()) + " · Caisse : " + (locked()?"clôturée":"ouverte");
-          if (locked() && $("viewVente").style.display!=="none"){ $("addVente").disabled = true; }
-          renderGrid();
         }
       }).subscribe();
   }
-  window.addEventListener("beforeunload",()=>{ if(st.sub) db.removeChannel(st.sub); });
+  window.addEventListener("beforeunload", () => { if (st.sub) db.removeChannel(st.sub); });
 
-  loadAll().then(subscribe).catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+  loadPage().then(subscribe).catch(e => { console.error(e); toast("Erreur de chargement","ko"); });
 </script>
 </body></html>

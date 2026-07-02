@@ -127,7 +127,7 @@
   if (!initPage(["manager", "owner"])) throw new Error("non autorisé");
 
   const ROLE_LBL = { staff:"Staff", caissier:"Caissier", chicha:"Chicha", achats:"Achats", manager:"Manager" };
-  const PRES_STATUTS = [["present","Présent"],["absent","Absent"],["retard","Retard"],["conge","Congé"]];
+  const PRES_STATUTS = [["present","Présent"],["absent","Absent"],["retard","Retard"],["conge","Congé"],["repos","Repos"]];
   let empEditId = null;
   const fullName = (e) => ((e.prenom ? e.prenom + " " : "") + (e.nom||"")).trim();
   function monthBounds(ym){ const [y,m]=ym.split("-").map(Number); const nm = m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,"0")}`; return { start:`${ym}-01`, end:`${nm}-01` }; }

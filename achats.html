@@ -51,10 +51,11 @@
       <div id="chichaCalc" style="font-size:13px;color:var(--gold);font-weight:700;margin:4px 0 8px"></div>
     </div>
 
-    <!-- Pack helper (non-chicha, optionnel) -->
-    <div id="packFields">
+    <!-- Pack helper (non-chicha, masqué par défaut) -->
+    <button type="button" id="packToggle" style="background:none;border:none;color:var(--gold);font-size:13px;font-weight:600;cursor:pointer;padding:0;margin-bottom:10px;text-decoration:underline">+ Acheter en cartons / packs</button>
+    <div id="packFields" style="display:none">
       <div class="twoin">
-        <div><label>Nb de cartons / packs <span class="muted" style="font-size:11px">(optionnel)</span></label>
+        <div><label>Nb de cartons / packs</label>
           <input id="aNbPacks" type="number" min="1" placeholder="Ex : 2"></div>
         <div><label>Unités par carton</label>
           <input id="aUnitsParPack" type="number" min="1" placeholder="Ex : 24"></div>
@@ -122,17 +123,32 @@
     return opt && opt.dataset.type === "chicha";
   }
 
+  function resetPackFields(){
+    $("aNbPacks").value = ""; $("aUnitsParPack").value = "";
+    $("packCalc").textContent = "";
+    $("packFields").style.display = "none";
+    $("packToggle").textContent = "+ Acheter en cartons / packs";
+    $("puLabel").textContent  = "Prix unitaire (GNF)";
+    $("qtyLabel").textContent = "Quantité";
+  }
+
+  $("packToggle").addEventListener("click", ()=>{
+    const open = $("packFields").style.display === "none";
+    $("packFields").style.display = open ? "" : "none";
+    $("packToggle").textContent = open ? "− Retirer les packs" : "+ Acheter en cartons / packs";
+    if (!open) { resetPackFields(); $("aQty").value = ""; autoMontant(); }
+  });
+
   $("aProduit").addEventListener("change", ()=>{
     const opt = $("aProduit").selectedOptions[0];
     const chicha = opt && opt.dataset.type === "chicha";
     $("chichaFields").style.display = chicha ? "" : "none";
-    $("packFields").style.display  = chicha ? "none" : "";
+    $("packToggle").style.display   = chicha ? "none" : "";
     $("qtyRow").style.display = chicha ? "none" : "";
     $("puLabel").textContent = chicha ? "Prix par boîte (GNF)" : "Prix unitaire (GNF)";
-    $("qtyLabel").textContent = "Quantité";
     $("aNbBoites").value = ""; $("aTetoesParBoite").value = "";
-    $("aNbPacks").value  = ""; $("aUnitsParPack").value  = "";
-    $("chichaCalc").textContent = ""; $("packCalc").textContent = "";
+    $("chichaCalc").textContent = "";
+    resetPackFields();
     $("aQty").value = ""; $("aPU").value = "";
     if (!opt || !opt.value) return;
     $("aNom").value = opt.textContent.replace(/\s*\(stock.*\)$/,"").trim();
@@ -254,14 +270,12 @@
       }
     }
     await ML.logAction("Achat "+gnf(montant)+(rec.produit_nom?" — "+rec.produit_nom:"")+(produitId&&qty?" · stock +"+qty:""));
-    ["aCat","aNom","aQty","aPU","aMontant","aNbBoites","aTetoesParBoite","aNbPacks","aUnitsParPack"].forEach(id=>$(id).value="");
+    ["aCat","aNom","aQty","aPU","aMontant","aNbBoites","aTetoesParBoite"].forEach(id=>$(id).value="");
     $("aProduit").value = "";
     $("chichaFields").style.display = "none";
-    $("packFields").style.display   = "";
     $("qtyRow").style.display = "";
-    $("chichaCalc").textContent = ""; $("packCalc").textContent = "";
-    $("puLabel").textContent  = "Prix unitaire (GNF)";
-    $("qtyLabel").textContent = "Quantité";
+    $("chichaCalc").textContent = "";
+    resetPackFields();
     toast("Achat ajouté" + (produitId&&qty?" · stock mis à jour":""), "ok");
     loadAchats();
   });

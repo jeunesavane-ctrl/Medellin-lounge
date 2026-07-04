@@ -271,13 +271,13 @@ function initPage(roles) {
 const HEADER_HTML = `
 <div class="ml-topbar">
   <button class="ml-burger" onclick="ML.toggleNav()" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
-  <span class="ml-topbrand">MEDELLIN <span>LOUNGE</span></span>
+  <span class="ml-topbrand">Medellin <span>Lounge</span></span>
 </div>
 <div class="ml-overlay" id="ml-overlay" onclick="ML.toggleNav()"></div>
 <aside class="ml-sidebar" id="ml-sidebar">
   <div class="ml-brand">
     <div class="ml-logo">ML</div>
-    <div class="ml-brandtext"><b>MEDELLIN</b><small>LOUNGE</small></div>
+    <div class="ml-brandtext"><b>Medellin Lounge</b><small>CONAKRY</small></div>
   </div>
   <nav id="ml-nav" class="ml-nav"></nav>
   <div class="ml-side-foot"><div class="ml-user" id="ml-userbox"></div></div>

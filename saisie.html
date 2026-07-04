@@ -3,6 +3,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ventes — Medellin Lounge</title>
+<meta name="theme-color" content="#090709">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23160e0b'/><rect x='.5' y='.5' width='63' height='63' rx='13.5' fill='none' stroke='%23c96e48' stroke-opacity='.4'/><text x='32' y='41' font-family='Arial,Helvetica,sans-serif' font-size='23' font-weight='800' fill='%23e89872' text-anchor='middle'>ML</text></svg>">
 <link rel="stylesheet" href="shared.css">
 <style>
   .tables-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:10px; }
@@ -394,6 +396,7 @@
   });
 
   async function deleteVente(id, produitId, qty) {
+    if (locked()) { toast("Caisse clôturée","ko"); return; }
     if (!confirm("Supprimer cette vente ?")) return;
     const vente = st.ventes.find(v => v.id === id);
     const { error } = await db.from("ventes_session").delete().eq("id", id);
@@ -445,6 +448,7 @@
   $("terminerVentes").addEventListener("click", async (ev) => {
     const enc = ev.target.closest(".btn-enc");
     if (!enc) return;
+    if (locked()) { toast("Caisse clôturée","ko"); return; }
     const { error } = await db.from("ventes_session").update({ paiement: enc.dataset.p }).eq("id", enc.dataset.id);
     if (error) { toast("Erreur","ko"); return; }
     const v = st.ventes.find(v => v.id === enc.dataset.id);
@@ -456,6 +460,7 @@
   let validating = false;
   $("btnValider").addEventListener("click", async () => {
     if (validating) return;
+    if (locked()) { toast("Caisse clôturée — vois avec la caissière","ko"); return; }
     const pending = st.ventes.filter(v => v.paiement === "a_regler");
     if (pending.length && !confirm(`${pending.length} vente(s) encore "À régler". Valider quand même ?`)) return;
     validating = true; $("btnValider").disabled = true;

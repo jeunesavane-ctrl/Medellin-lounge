@@ -332,7 +332,7 @@
         db.from("sorties_chicha").delete().eq("session_id", sid),
         db.from("verifications_staff").delete().eq("session_id", sid),
         db.from("mouvements_caisse").delete().eq("session_id", sid),
-        db.from("achats").delete().eq("date", rap.date),
+        db.from("achats_session").delete().eq("session_id", sid),
       ]);
     }
 

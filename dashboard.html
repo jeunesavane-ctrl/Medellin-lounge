@@ -4,6 +4,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tableau de bord — Medellin Lounge</title>
 <link rel="stylesheet" href="shared.css">
+<style>
+.charts-row {
+  display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px;
+}
+.chart-card { padding: 16px 18px 14px; }
+.chart-hd {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .8px; margin-bottom: 16px;
+}
+.ring-box { position: relative; display: flex; align-items: center; justify-content: center; padding: 8px 0 4px; }
+.ring-lbl {
+  position: absolute; text-align: center; pointer-events: none;
+  font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.1;
+}
+.ring-lbl small { display: block; font-size: 10px; color: var(--muted); font-weight: 500; letter-spacing: .5px; margin-top: 3px; }
+@media (min-width: 680px) {
+  .charts-row { grid-template-columns: 1fr 210px; }
+}
+</style>
 </head><body>
 <div id="toast"></div>
 
@@ -13,11 +32,32 @@
     <div class="hsub" id="todayLbl"></div>
   </div>
 
-  <!-- KPIs du jour (owner / manager) -->
+  <!-- KPIs -->
   <div class="grid grid-3" id="kpis" hidden>
     <div class="card kpi"><div class="ic"><i class="ti ti-cash"></i></div><div class="meta"><div class="val" id="kRecettes">—</div><div class="lbl">Recettes du jour</div></div></div>
     <div class="card kpi"><div class="ic"><i class="ti ti-trending-up"></i></div><div class="meta"><div class="val" id="kNet">—</div><div class="lbl">Net du jour</div></div></div>
     <div class="card kpi"><div class="ic"><i class="ti ti-target"></i></div><div class="meta"><div class="val" id="kObjectif">—</div><div class="lbl">Objectif</div></div></div>
+  </div>
+
+  <!-- Graphiques -->
+  <div id="chartsSection" hidden>
+    <div class="charts-row">
+      <div class="card chart-card">
+        <div class="chart-hd">Recettes — 7 derniers jours</div>
+        <canvas id="chartBar" height="185"></canvas>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-hd">Objectif du jour</div>
+        <div class="ring-box">
+          <canvas id="chartRing" style="max-width:158px;max-height:158px"></canvas>
+          <div class="ring-lbl" id="ringLbl"><small>—</small></div>
+        </div>
+      </div>
+    </div>
+    <div class="card chart-card" style="margin-bottom:14px">
+      <div class="chart-hd">Net — 30 derniers jours</div>
+      <canvas id="chartLine" height="140"></canvas>
+    </div>
   </div>
 
   <!-- Session du jour -->
@@ -29,7 +69,7 @@
     <div id="sessInfo" class="muted mt">Chargement…</div>
   </div>
 
-  <!-- Sessions en attente de validation (manager / owner) -->
+  <!-- À valider -->
   <div class="card" id="pendingCard" hidden>
     <h2 style="margin-top:0">À valider</h2>
     <div id="pendingList"></div>
@@ -37,11 +77,11 @@
 
   <!-- Stock bas -->
   <div class="card" id="stockCard" hidden>
-    <h2 style="margin-top:0">⚠ Stock bas</h2>
+    <h2 style="margin-top:0">Stock bas</h2>
     <div id="stockList"></div>
   </div>
 
-  <!-- Vue associé -->
+  <!-- Associé -->
   <div class="card" id="associeCard" hidden>
     <h2 style="margin-top:0">Espace associé</h2>
     <p class="muted">Bienvenue. Consultez vos parts et le bilan dans les sections
@@ -51,6 +91,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="shared.js"></script>
 <script>
   document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
@@ -59,121 +100,225 @@
   const role = ML.getRole();
   const extra = ML.getExtra();
   let _sub = null;
+  let chartBar, chartRing, chartLine;
+  let _obj = 0;
+
+  Chart.defaults.color = "#7a7282";
+  Chart.defaults.font.family = '"Outfit", system-ui, sans-serif';
+  Chart.defaults.font.size = 11;
 
   const SESS_TAGS = {
-    ouvert:          ["Ouverte", "tag-warn"],
-    valide_caissier: ["Clôturée caissière", "tag-warn"],
-    valide_manager:  ["Validée", "tag-ok"],
+    ouvert:          ["Ouverte",             "tag-warn"],
+    valide_caissier: ["Clôturée caissière",  "tag-warn"],
+    valide_manager:  ["Validée",             "tag-ok"],
   };
 
+  const fmtK = v =>
+    v >= 1_000_000 ? (v/1_000_000).toFixed(1)+"M"
+    : v >= 1_000   ? (v/1_000).toFixed(0)+"k"
+    : String(v);
+
+  const TTP = {
+    backgroundColor:"#161320", borderColor:"#2a2534", borderWidth:1,
+    titleColor:"#f0ece6", bodyColor:"#7a7282", padding:10, displayColors:false,
+  };
+
+  /* ─── INIT ──────────────────────────────────────────────────── */
   async function init() {
     $("greet").textContent = "Bonjour " + (extra.nom || "");
     $("todayLbl").textContent = frDate(todayISO());
 
-    if (role === "associe") {
-      $("associeCard").hidden = false;
-      return;
-    }
+    if (role === "associe") { $("associeCard").hidden = false; return; }
 
-    // owner / manager
     $("kpis").hidden = false;
     $("sessionCard").hidden = false;
     $("pendingCard").hidden = false;
 
-    await Promise.all([loadKpis(), loadSession(), loadPending(), loadStockAlert()]);
+    await loadKpis();
+    await Promise.all([loadSession(), loadPending(), loadStockAlert(), loadCharts()]);
     subscribeRealtime();
   }
 
+  /* ─── KPIs ──────────────────────────────────────────────────── */
   async function loadKpis() {
     const today = todayISO();
-    const { data: cfg } = await db.from("config").select("value").eq("key", "objectif_journalier").maybeSingle();
-    const obj = cfg?.value ? Number(cfg.value) : 0;
-    $("kObjectif").textContent = obj ? gnf(obj) : "—";
+    const { data: cfg } = await db.from("config").select("value").eq("key","objectif_journalier").maybeSingle();
+    _obj = cfg?.value ? Number(cfg.value) : 0;
+    $("kObjectif").textContent = _obj ? gnf(_obj) : "—";
 
-    // Rapport validé du jour → chiffres définitifs
-    const { data: rap } = await db.from("rapports").select("recettes,net").eq("date", today).maybeSingle();
+    const { data: rap } = await db.from("rapports").select("recettes,net").eq("date",today).maybeSingle();
     if (rap) {
-      $("kRecettes").textContent = gnf(rap.recettes || 0);
-      $("kNet").textContent = gnf(rap.net || 0);
-      return;
+      $("kRecettes").textContent = gnf(rap.recettes||0);
+      $("kNet").textContent = gnf(rap.net||0);
+      _updateRing(rap.recettes||0); return;
     }
-    // Sinon → chiffres EN DIRECT depuis la session en cours
-    const { data: s } = await db.from("sessions_caisse").select("id").eq("date", today).maybeSingle();
-    if (!s) { $("kRecettes").textContent = gnf(0); $("kNet").textContent = gnf(0); return; }
+    const { data: s } = await db.from("sessions_caisse").select("id").eq("date",today).maybeSingle();
+    if (!s) { $("kRecettes").textContent = gnf(0); $("kNet").textContent = gnf(0); _updateRing(0); return; }
     const [{ data: v }, { data: a }] = await Promise.all([
-      db.from("ventes_session").select("total").eq("session_id", s.id),
-      db.from("achats_session").select("montant").eq("session_id", s.id),
+      db.from("ventes_session").select("total").eq("session_id",s.id),
+      db.from("achats_session").select("montant").eq("session_id",s.id),
     ]);
-    const recettes = (v || []).reduce((x, r) => x + (r.total || 0), 0);
-    const achats = (a || []).reduce((x, r) => x + (r.montant || 0), 0);
-    $("kRecettes").textContent = gnf(recettes);
-    $("kNet").textContent = gnf(recettes - achats);
+    const rec = (v||[]).reduce((x,r)=>x+(r.total||0),0);
+    const ach = (a||[]).reduce((x,r)=>x+(r.montant||0),0);
+    $("kRecettes").textContent = gnf(rec);
+    $("kNet").textContent = gnf(rec-ach);
+    _updateRing(rec);
   }
 
-  async function loadSession() {
-    const today = todayISO();
-    const { data: s } = await db
-      .from("sessions_caisse").select("*").eq("date", today).maybeSingle();
-    if (!s) {
-      $("sessTag").textContent = "Aucune";
-      $("sessTag").className = "tag tag-muted";
-      $("sessInfo").innerHTML = "Aucune session ouverte aujourd'hui.";
-      return;
+  /* ─── ANNEAU (mise à jour dynamique) ────────────────────────── */
+  function _updateRing(rec) {
+    if (!chartRing) return;
+    chartRing.data.datasets[0].data = [rec, Math.max(0, _obj-rec)];
+    chartRing.update("none");
+    const lbl = $("ringLbl");
+    if (_obj) {
+      const pct = Math.round(Math.min(1, rec/_obj)*100);
+      lbl.innerHTML = `${pct}<span style="font-size:14px;color:var(--muted)">%</span><small>de l'objectif</small>`;
+    } else {
+      lbl.innerHTML = `<small>Pas d'objectif</small>`;
     }
-    const [lbl, cls] = SESS_TAGS[s.statut] || ["—", "tag-muted"];
-    $("sessTag").textContent = lbl;
-    $("sessTag").className = "tag " + cls;
-    $("sessInfo").innerHTML =
-      `Fond de caisse : <b>${gnf(s.fond_caisse || 0)}</b>` +
-      (s.statut !== "ouvert" ? ` · Écart espèces : <b>${gnf(s.ecart_especes || 0)}</b>` : "");
   }
 
+  /* ─── GRAPHIQUES ─────────────────────────────────────────────── */
+  async function loadCharts() {
+    const [{ data: rap7 }, { data: rap30 }] = await Promise.all([
+      db.from("rapports").select("date,recettes").order("date",{ascending:false}).limit(7),
+      db.from("rapports").select("date,net").order("date",{ascending:false}).limit(30),
+    ]);
+
+    $("chartsSection").hidden = false;
+
+    /* Barres 7 jours */
+    const d7 = [...(rap7||[])].reverse();
+    const labB = d7.map(r => new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"numeric"}));
+    const valB = d7.map(r => r.recettes||0);
+
+    const dsets = [{
+      label:"Recettes", data:valB,
+      backgroundColor:"rgba(201,110,72,.75)",
+      borderRadius:5, borderSkipped:false,
+    }];
+    if (_obj) dsets.push({
+      label:"Objectif", data:d7.map(()=>_obj),
+      type:"line", borderColor:"rgba(240,168,48,.4)",
+      borderWidth:1.5, borderDash:[4,4], pointRadius:0, fill:false,
+    });
+
+    chartBar = new Chart($("chartBar"), {
+      type:"bar",
+      data:{ labels:labB, datasets:dsets },
+      options:{
+        responsive:true, maintainAspectRatio:true,
+        plugins:{ legend:{display:false}, tooltip:{...TTP, callbacks:{label:c=>" "+gnf(c.raw)}} },
+        scales:{
+          x:{ grid:{display:false}, border:{display:false}, ticks:{color:"#5a5360",font:{size:10}} },
+          y:{ grid:{color:"#1b1720",drawTicks:false}, border:{display:false},
+              ticks:{color:"#5a5360",font:{size:10},callback:fmtK} },
+        },
+      },
+    });
+
+    /* Anneau objectif */
+    const todayRec = (rap7||[]).find(r=>r.date===todayISO())?.recettes||0;
+    chartRing = new Chart($("chartRing"),{
+      type:"doughnut",
+      data:{datasets:[{
+        data:[todayRec, Math.max(0,_obj-todayRec)],
+        backgroundColor:["#c96e48","#1b1720"],
+        borderWidth:0, hoverBackgroundColor:["#e89872","#211d28"],
+      }]},
+      options:{
+        cutout:"76%", responsive:true,
+        plugins:{legend:{display:false},tooltip:{enabled:false}},
+        animation:{duration:700,easing:"easeInOutQuart"},
+      },
+    });
+    _updateRing(todayRec);
+
+    /* Courbe 30 jours net */
+    const d30 = [...(rap30||[])].reverse();
+    const labL = d30.map(r=>new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{day:"numeric",month:"short"}));
+    const valL = d30.map(r=>r.net||0);
+
+    const ctx30 = $("chartLine").getContext("2d");
+    const grad = ctx30.createLinearGradient(0,0,0,180);
+    grad.addColorStop(0,"rgba(201,110,72,.16)");
+    grad.addColorStop(1,"rgba(201,110,72,0)");
+
+    chartLine = new Chart(ctx30,{
+      type:"line",
+      data:{ labels:labL, datasets:[{
+        label:"Net", data:valL,
+        borderColor:"#c96e48", borderWidth:1.8,
+        backgroundColor:grad, fill:true,
+        tension:0.35, pointRadius:0,
+        pointHoverRadius:4, pointHoverBackgroundColor:"#c96e48",
+      }]},
+      options:{
+        responsive:true, maintainAspectRatio:true,
+        plugins:{legend:{display:false}, tooltip:{...TTP, callbacks:{label:c=>" "+gnf(c.raw)}}},
+        scales:{
+          x:{ grid:{display:false}, border:{display:false},
+              ticks:{color:"#5a5360",font:{size:10},maxTicksLimit:8,maxRotation:0} },
+          y:{ grid:{color:"#1b1720"}, border:{display:false},
+              ticks:{color:"#5a5360",font:{size:10},callback:fmtK} },
+        },
+      },
+    });
+  }
+
+  /* ─── SESSION ────────────────────────────────────────────────── */
+  async function loadSession() {
+    const { data:s } = await db.from("sessions_caisse").select("*").eq("date",todayISO()).maybeSingle();
+    if (!s) {
+      $("sessTag").textContent="Aucune"; $("sessTag").className="tag tag-muted";
+      $("sessInfo").innerHTML="Aucune session ouverte aujourd'hui."; return;
+    }
+    const [lbl,cls] = SESS_TAGS[s.statut]||["—","tag-muted"];
+    $("sessTag").textContent=lbl; $("sessTag").className="tag "+cls;
+    $("sessInfo").innerHTML=`Fond de caisse : <b>${gnf(s.fond_caisse||0)}</b>`+
+      (s.statut!=="ouvert" ? ` · Écart : <b>${gnf(s.ecart_especes||0)}</b>` : "");
+  }
+
+  /* ─── STOCK BAS ──────────────────────────────────────────────── */
   async function loadStockAlert() {
     const { data } = await db.from("produits").select("nom,stock_actuel,stock_min,unite_vente").not("actif","is",false);
-    const bas = (data||[]).filter(p => Number(p.stock_actuel||0) <= Number(p.stock_min||0));
+    const bas = (data||[]).filter(p=>Number(p.stock_actuel||0)<=Number(p.stock_min||0));
     const card = $("stockCard");
-    if (!bas.length){ card.hidden = true; return; }
-    card.hidden = false;
-    $("stockList").innerHTML = bas.map(p=>`
+    if (!bas.length){ card.hidden=true; return; }
+    card.hidden=false;
+    $("stockList").innerHTML=bas.map(p=>`
       <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">
         <span style="font-weight:600">${escHtml(p.nom)}</span>
         <span class="tag tag-ko">Stock : ${Number(p.stock_actuel)||0} ${escHtml(p.unite_vente||"")}</span>
       </div>`).join("");
   }
 
+  /* ─── EN ATTENTE ─────────────────────────────────────────────── */
   async function loadPending() {
-    const { data: list } = await db
-      .from("sessions_caisse").select("date,fond_caisse,ecart_especes")
-      .eq("statut", "valide_caissier").order("date", { ascending: false });
-    const el = $("pendingList");
-    if (!list || !list.length) {
-      el.innerHTML = `<p class="muted">Rien à valider pour le moment.</p>`;
-      return;
-    }
-    el.innerHTML = list.map((s) =>
-      `<div class="row between" style="padding:8px 0;border-bottom:1px solid var(--line)">
-         <span>${escHtml(frDate(s.date))}</span>
-         <a class="btn btn-sm" href="rapport.html?date=${escHtml(s.date)}">Valider</a>
-       </div>`
-    ).join("");
+    const { data:list } = await db.from("sessions_caisse")
+      .select("date").eq("statut","valide_caissier").order("date",{ascending:false});
+    const el=$("pendingList");
+    if (!list||!list.length){ el.innerHTML=`<p class="muted">Rien à valider pour le moment.</p>`; return; }
+    el.innerHTML=list.map(s=>`
+      <div class="row between" style="padding:8px 0;border-bottom:1px solid var(--line)">
+        <span>${escHtml(frDate(s.date))}</span>
+        <a class="btn btn-sm" href="rapport.html?date=${escHtml(s.date)}">Valider</a>
+      </div>`).join("");
   }
 
+  /* ─── REALTIME ───────────────────────────────────────────────── */
   function subscribeRealtime() {
     _sub = db.channel("dash")
-      .on("postgres_changes", { event: "*", schema: "public", table: "sessions_caisse" },
-        () => { loadSession(); loadPending(); loadKpis(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "rapports" },
-        () => { loadKpis(); loadPending(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "ventes_session" },
-        () => { loadKpis(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "achats_session" },
-        () => { loadKpis(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "produits" },
-        () => { loadStockAlert(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"sessions_caisse"},()=>{loadSession();loadPending();loadKpis();})
+      .on("postgres_changes",{event:"*",schema:"public",table:"rapports"},()=>{loadKpis();loadPending();})
+      .on("postgres_changes",{event:"*",schema:"public",table:"ventes_session"},()=>{loadKpis();})
+      .on("postgres_changes",{event:"*",schema:"public",table:"achats_session"},()=>{loadKpis();})
+      .on("postgres_changes",{event:"*",schema:"public",table:"produits"},()=>{loadStockAlert();})
       .subscribe();
   }
-  window.addEventListener("beforeunload", () => { if (_sub) db.removeChannel(_sub); });
+  window.addEventListener("beforeunload",()=>{ if(_sub) db.removeChannel(_sub); });
 
-  init().catch((e) => { console.error(e); toast("Erreur de chargement", "ko"); });
+  init().catch(e=>{ console.error(e); toast("Erreur de chargement","ko"); });
 </script>
 </body></html>

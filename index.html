@@ -6,71 +6,105 @@
 <link rel="stylesheet" href="shared.css">
 <style>
   body { padding-top: 0; }
+
   .login-wrap {
-    position: relative; min-height: 100dvh; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; padding: clamp(14px, 3vh, 28px) 18px;
-    background: url('MEDEL.jpeg') center center / cover no-repeat;
+    min-height: 100dvh;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: clamp(24px,4vh,48px) 24px;
+    background: #090709;
+    background-image: radial-gradient(ellipse 65% 50% at 50% 44%, #120a08 0%, transparent 70%);
   }
-  .login-wrap::before {
-    content: ""; position: fixed; inset: 0;
-    background: rgba(5,6,12,.72);
-    pointer-events: none;
-  }
+
   .login-card {
-    position: relative; z-index: 1; width: 100%; max-width: 360px;
+    width: 100%; max-width: 292px;
     display: flex; flex-direction: column; align-items: center;
-    padding: clamp(20px,3.4vh,34px) clamp(18px,5vw,28px) clamp(16px,3vh,28px); border-radius: 16px;
-    background: rgba(15,18,32,.88);
-    border: 1px solid rgba(255,255,255,.08);
-    box-shadow: 0 24px 60px rgba(0,0,0,.7);
-    backdrop-filter: blur(12px);
   }
-  .login-logo {
-    width: clamp(52px,8.5vh,68px); height: clamp(52px,8.5vh,68px); border-radius: 50%;
-    background: #1a35f0; border: 3px solid #2a4fff;
-    color: #fff; font-weight: 800; font-size: clamp(18px,3.2vh,24px); letter-spacing: .5px;
-    display: flex; align-items: center; justify-content: center; margin-bottom: clamp(12px,2.2vh,18px);
+
+  .login-mark {
+    width: clamp(46px,7.5vh,56px); height: clamp(46px,7.5vh,56px);
+    border-radius: 13px;
+    background: #160e0b;
+    border: 1px solid rgba(201,110,72,.2);
+    color: #e89872;
+    font-weight: 800; font-size: clamp(15px,2.5vh,19px); letter-spacing: 1px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: clamp(18px,3vh,26px);
   }
-  .login-brand {
-    font-size: clamp(18px,3.4vh,23px); font-weight: 700; letter-spacing: .3px; margin-bottom: 5px;
-    color: var(--text);
+
+  .login-name {
+    font-size: clamp(18px,3vh,22px);
+    font-weight: 600; letter-spacing: .2px;
+    color: #f0ece6; margin-bottom: 4px;
   }
-  .login-brand span { color: var(--blue); }
-  .login-tag { color: var(--muted); font-size: 13px; margin-bottom: clamp(14px,2.8vh,28px); text-align: center; }
-  .pin-dots { display: flex; gap: 15px; margin-bottom: clamp(14px,2.8vh,28px); min-height: 16px; }
+  .login-name span { color: #c96e48; font-weight: 400; }
+
+  .login-city {
+    font-size: 10px; letter-spacing: 3px;
+    text-transform: uppercase; color: #5a5360;
+    margin-bottom: clamp(28px,4.5vh,40px);
+  }
+
+  .pin-dots {
+    display: flex; gap: 11px; align-items: center;
+    height: 10px; margin-bottom: clamp(20px,3.5vh,32px);
+  }
   .pin-dots .dot {
-    width: 14px; height: 14px; border-radius: 50%;
-    border: 2px solid var(--line-2); background: transparent; transition: all .15s ease;
+    width: 8px; height: 8px; border-radius: 50%;
+    border: 1.5px solid #2a2534; background: transparent;
+    transition: background .12s, border-color .12s;
   }
-  .pin-dots .dot.on {
-    background: var(--blue); border-color: var(--blue); transform: scale(1.1);
+  .pin-dots .dot.on { background: #c96e48; border-color: #c96e48; }
+
+  .keypad {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: clamp(8px,1.5vh,12px); width: 100%;
   }
-  .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(9px,1.8vh,14px); width: 100%; max-width: min(290px, 80vw, 42vh); }
+
   .key {
-    aspect-ratio: 1 / 1;
-    background: var(--surface-2);
-    border: 1px solid var(--line-2); color: var(--text);
-    border-radius: 50%; font-size: clamp(20px,3.4vh,26px); font-weight: 600; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; user-select: none;
-    transition: transform .1s, background .15s, border-color .15s;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #141118;
+    border: 1px solid #211d28;
+    color: #f0ece6;
+    font-size: clamp(19px,3.2vh,24px); font-weight: 400;
+    font-family: inherit; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    user-select: none; -webkit-tap-highlight-color: transparent;
+    transition: background .1s, transform .08s;
   }
-  .key:hover { background: var(--surface-3); border-color: var(--blue-dim); }
-  .key:active { background: var(--blue); color: #fff; border-color: var(--blue); transform: scale(.94); }
-  .key.fn { font-size: 22px; color: var(--muted); background: transparent; border-color: var(--line); }
-  .key.ok { color: var(--blue); border-color: rgba(64,112,255,.4); }
-  .key.ok:active { color: #fff; }
-  .key:disabled { opacity: .4; pointer-events: none; }
-  .login-foot { margin-top: clamp(14px,2.4vh,26px); color: var(--faint); font-size: 11px; text-align: center; }
-  @media (prefers-reduced-motion: reduce) { .login-card, .key { animation: none; } }
+  .key:hover { background: #1b1720; }
+  .key:active { transform: scale(.9); background: #1b1720; }
+
+  .key.fn {
+    background: transparent; border-color: transparent;
+    color: #5a5360; font-size: clamp(15px,2.6vh,20px);
+  }
+
+  .key.ok {
+    background: transparent;
+    border: 1.5px solid rgba(201,110,72,.4);
+    color: #c96e48; font-size: clamp(16px,2.8vh,22px);
+  }
+  .key.ok:active { background: #c96e48; color: #f0ece6; border-color: #c96e48; }
+
+  .key:disabled { opacity: .22; pointer-events: none; }
+
+  .login-foot {
+    margin-top: clamp(36px,5.5vh,52px);
+    font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; color: #2e2b34;
+    text-align: center;
+  }
 </style>
 </head><body>
 <div id="toast"></div>
 
 <div class="login-wrap">
   <div class="login-card">
-    <div class="login-logo">ML</div>
-    <div class="login-brand">Medellin <span>Lounge</span></div>
-    <div class="login-tag">Entrez votre code confidentiel</div>
+    <div class="login-mark">ML</div>
+    <div class="login-name">Medellin <span>Lounge</span></div>
+    <div class="login-city">Conakry</div>
 
     <div class="pin-dots" id="dots"></div>
 
@@ -90,13 +124,12 @@
     </div>
   </div>
 
-  <div class="login-foot">NEXUS SERVICES &amp; CONSTRUCTION SARL — Conakry</div>
+  <div class="login-foot">Nexus Services &amp; Construction SARL</div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="shared.js"></script>
 <script>
-  // Déjà connecté ? → vers sa page d'accueil
   if (ML.getRole()) location.href = landingFor(ML.getRole());
 
   let pin = "";
@@ -132,7 +165,6 @@
     try {
       const h = await sha256(pin);
 
-      // 1+2. config : owner puis manager (secours)
       const { data: cfgRows, error: cErr } = await db
         .from("config").select("key,value")
         .in("key", ["pin_owner", "pin_manager", "owner_nom"]);
@@ -149,7 +181,6 @@
         role = "manager";
         extra = { nom: "Manager", acces: "secours" };
       } else {
-        // 3. employes
         const { data: emp } = await db
           .from("employes").select("id,nom,prenom,role")
           .eq("pin_hash", h).not("actif", "is", false).limit(1);
@@ -158,7 +189,6 @@
           role = e.role;
           extra = { nom: ((e.prenom ? e.prenom + " " : "") + e.nom).trim(), employe_id: e.id };
         } else {
-          // 4. associes
           const { data: asso } = await db
             .from("associes").select("id,nom,prenom,pourcentage")
             .eq("pin_hash", h).not("actif", "is", false).limit(1);
@@ -173,7 +203,6 @@
         }
       }
 
-      // 5. aucune correspondance
       if (!role) { toast("Code incorrect", "ko"); clearPin(); return; }
 
       ML.setSession(role, extra, { hOwner: C.pin_owner || null, hManager: C.pin_manager || null });
@@ -188,7 +217,6 @@
     }
   }
 
-  // Pavé
   $("keypad").addEventListener("click", (ev) => {
     const k = ev.target.closest(".key");
     if (!k) return;
@@ -197,7 +225,6 @@
   $("kClear").addEventListener("click", clearPin);
   $("kOk").addEventListener("click", validate);
 
-  // Clavier physique
   document.addEventListener("keydown", (ev) => {
     if (ev.key >= "0" && ev.key <= "9") addDigit(ev.key);
     else if (ev.key === "Backspace") { pin = pin.slice(0, -1); renderDots(); }

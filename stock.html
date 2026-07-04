@@ -16,10 +16,10 @@
   .mrow { display:grid; grid-template-columns:auto 1fr auto auto; gap:8px; align-items:center;
           padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
   .mrow .src { font-size:11px; color:var(--muted); }
-  .badge-ok  { background:rgba(72,199,142,.15); color:#27ae60; border-radius:6px; padding:2px 7px; font-size:11px; font-weight:700; }
-  .badge-bas { background:rgba(255,193,7,.15);  color:#e6ac00; border-radius:6px; padding:2px 7px; font-size:11px; font-weight:700; }
-  .badge-ko  { background:rgba(232,85,78,.15);  color:var(--ko); border-radius:6px; padding:2px 7px; font-size:11px; font-weight:700; }
-  .mvt-plus  { color:#27ae60; font-weight:700; }
+  .badge-ok  { background:rgba(78,207,128,.12); color:var(--ok);   border-radius:6px; padding:2px 7px; font-size:11px; font-weight:700; }
+  .badge-bas { background:rgba(232,180,74,.12); color:var(--warn); border-radius:6px; padding:2px 7px; font-size:11px; font-weight:700; }
+  .badge-ko  { background:rgba(224,84,84,.12);  color:var(--ko);   border-radius:6px; padding:2px 7px; font-size:11px; font-weight:700; }
+  .mvt-plus  { color:var(--ok); font-weight:700; }
   .mvt-minus { color:var(--ko); font-weight:700; }
   .inv-diff  { font-size:14px; font-weight:700; margin:8px 0; min-height:22px; }
   .kpi-stock { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
@@ -155,8 +155,8 @@ function goTab(key) {
     const bas = produits.filter(p=>Number(p.stock_actuel||0)>0 && Number(p.stock_actuel||0)<=Number(p.stock_min||0)).length;
     const vide= produits.filter(p=>Number(p.stock_actuel||0)<=0).length;
     $("kpiStock").innerHTML = `
-      <div class="kcard"><div class="kval" style="color:#27ae60">${ok}</div><div class="klbl">OK</div></div>
-      <div class="kcard"><div class="kval" style="color:#e6ac00">${bas}</div><div class="klbl">Stock bas</div></div>
+      <div class="kcard"><div class="kval" style="color:var(--ok)">${ok}</div><div class="klbl">OK</div></div>
+      <div class="kcard"><div class="kval" style="color:var(--warn)">${bas}</div><div class="klbl">Stock bas</div></div>
       <div class="kcard"><div class="kval" style="color:var(--ko)">${vide}</div><div class="klbl">Vide / Critique</div></div>`;
     const el = $("stockList");
     if (!list.length){ el.innerHTML=`<p class="muted">Aucun produit.</p>`; return; }
@@ -245,7 +245,7 @@ function goTab(key) {
     const diff = reel - Number(p.stock_actuel||0);
     const el = $("invDiff");
     if(diff===0){ el.textContent="Aucune différence."; el.style.color="var(--muted)"; $("invSave").disabled=true; }
-    else { el.textContent=(diff>0?"+":"")+diff+" "+( p.unite_vente||"")+" (ajustement)"; el.style.color=diff>0?"#27ae60":"var(--ko)"; $("invSave").disabled=false; }
+    else { el.textContent=(diff>0?"+":"")+diff+" "+( p.unite_vente||"")+" (ajustement)"; el.style.color=diff>0?"var(--ok)":"var(--ko)"; $("invSave").disabled=false; }
   });
 
   $("invSave").addEventListener("click", async ()=>{

@@ -6,12 +6,28 @@
 <link rel="stylesheet" href="shared.css">
 <style>
   .rap { padding:12px 0; border-bottom:1px solid var(--line); }
-  .rap .top { display:flex; justify-content:space-between; align-items:center; }
-  .rap .date { font-weight:700; }
-  .rap .net { font-weight:800; color:var(--gold); }
-  .rap .meta { font-size:12px; color:var(--muted); margin-top:4px; display:flex; gap:12px; flex-wrap:wrap; }
-  .filters { display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
+  .rap:last-child { border-bottom:none; }
+  .rap .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .rap .rdate { font-weight:700; }
+  .rap .rnet { font-weight:800; color:var(--gold); white-space:nowrap; }
+  .rap .meta { font-size:12px; color:var(--muted); margin-top:4px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .filters { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
   .filters > div { flex:1; min-width:120px; }
+
+  /* Saisie manuelle */
+  #saisiePan { display:none; border-top:1px solid var(--line); padding-top:18px; margin-top:16px; }
+  #saisiePan.open { display:block; }
+  .form-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media(max-width:520px){ .form-2 { grid-template-columns:1fr; } }
+  .net-band {
+    background:var(--surface-2); border:1px solid var(--line-2);
+    border-radius:var(--radius-sm); padding:12px 16px;
+    display:flex; justify-content:space-between; align-items:center;
+    margin:4px 0 14px;
+  }
+  .net-band .nb-lbl { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px; }
+  .net-band .nb-val { font-size:20px; font-weight:700; }
+  .tag-manuel { background:rgba(201,110,72,.1); color:var(--blue-soft); border:1px solid rgba(201,110,72,.25); }
 </style>
 </head><body>
 <div id="toast"></div>
@@ -20,6 +36,65 @@
   <h1>Historique des rapports</h1>
   <div class="ml-sub" id="sub"></div>
 
+  <!-- Saisie manuelle -->
+  <div class="card">
+    <div class="row between">
+      <div>
+        <div style="font-weight:600;font-size:14px">Saisir un jour passé</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Recettes et dépenses pour une date sans session enregistrée</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="toggleBtn" style="width:auto;flex-shrink:0">+ Saisir</button>
+    </div>
+
+    <div id="saisiePan">
+      <div class="form-2" style="margin-top:4px">
+        <div>
+          <label>Date (passé uniquement)</label>
+          <input id="sDate" type="date">
+        </div>
+        <div></div>
+      </div>
+
+      <h3>Recettes du jour</h3>
+      <div class="form-2">
+        <div>
+          <label>Chicha (GNF)</label>
+          <input id="sChicha" type="number" min="0" value="0">
+        </div>
+        <div>
+          <label>Boissons &amp; autres (GNF)</label>
+          <input id="sBoissons" type="number" min="0" value="0">
+        </div>
+      </div>
+
+      <h3>Dépenses du jour</h3>
+      <div class="form-2">
+        <div>
+          <label>Achats fournisseurs (GNF)</label>
+          <input id="sAchats" type="number" min="0" value="0">
+        </div>
+        <div>
+          <label>Dépenses diverses (GNF)</label>
+          <input id="sDepenses" type="number" min="0" value="0">
+        </div>
+      </div>
+
+      <label>Note (optionnel)</label>
+      <input id="sNote" type="text" placeholder="ex : données récupérées du cahier…">
+
+      <div class="net-band">
+        <div class="nb-lbl">Net du jour</div>
+        <div class="nb-val" id="sNetPrev" style="color:var(--gold)">0 GNF</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-ghost btn-sm" id="cancelBtn" style="width:auto">Annuler</button>
+        <button class="btn btn-sm" id="sauveBtn">Enregistrer le rapport</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filtres -->
   <div class="card">
     <div class="filters">
       <div><label>Filtrer par mois</label><input id="fMonth" type="month" style="margin:0"></div>
@@ -28,6 +103,7 @@
     </div>
   </div>
 
+  <!-- Liste -->
   <div class="card">
     <div class="row between">
       <h2 style="margin:0">Rapports</h2>
@@ -45,100 +121,230 @@
 
   const isOwner = ML.getRole() === "owner";
   let all = [];
+  let saving = false;
+  let _cfg = null; let _assoc = null;
 
-  async function load(){
+  // Date max = hier
+  const yest = new Date(); yest.setDate(yest.getDate() - 1);
+  $("sDate").max = yest.toISOString().slice(0, 10);
+  $("sDate").value = yest.toISOString().slice(0, 10);
+
+  /* ── LISTE ──────────────────────────────────────────────────── */
+  async function load() {
     const { data } = await db.from("rapports").select("*").order("date", { ascending: false });
     all = data || [];
     render();
   }
 
-  function filtered(){
+  function filtered() {
     const m = $("fMonth").value;
-    return m ? all.filter(r => (r.date||"").slice(0,7) === m) : all;
+    return m ? all.filter(r => (r.date || "").slice(0, 7) === m) : all;
   }
 
-  function render(){
+  function render() {
     const rows = filtered();
-    $("count").textContent = rows.length + " rapport" + (rows.length>1?"s":"");
-    const totNet = rows.reduce((a,r)=>a+(r.net||0),0);
+    $("count").textContent = rows.length + " rapport" + (rows.length > 1 ? "s" : "");
+    const totNet = rows.reduce((a, r) => a + (r.net || 0), 0);
     $("sub").textContent = "Net cumulé affiché : " + gnf(totNet);
     const el = $("list");
-    if (!rows.length){ el.innerHTML = `<p class="muted">Aucun rapport.</p>`; return; }
-    el.innerHTML = rows.map(r=>`
+    if (!rows.length) { el.innerHTML = `<p class="muted">Aucun rapport.</p>`; return; }
+    el.innerHTML = rows.map(r => `
       <div class="rap" data-id="${escHtml(r.id)}">
         <div class="top">
-          <span class="date">${escHtml(frDate(r.date))} <span class="muted">· N°${r.num}</span></span>
-          <span class="net">${gnf(r.net)}</span>
+          <span class="rdate">${escHtml(frDate(r.date))} <span class="muted">· N°${r.num}</span></span>
+          <span class="rnet">${gnf(r.net)}</span>
         </div>
         <div class="meta">
           <span>Recettes ${gnf(r.recettes)}</span>
           <span>Achats ${gnf(r.total_achats)}</span>
-          <span>Manager : ${escHtml(r.manager||"—")}</span>
-          <span>Caissière : ${escHtml(r.caissier||"—")}</span>
+          ${!r.session_id ? `<span class="tag tag-manuel">saisie manuelle</span>` : `<span>Caissière : ${escHtml(r.caissier || "—")}</span>`}
+          <span>Manager : ${escHtml(r.manager || "—")}</span>
         </div>
         ${isOwner ? `<button class="btn btn-sm btn-ghost mt r-del">Supprimer</button>` : ""}
       </div>`).join("");
   }
 
-  $("fMonth").addEventListener("change", render);
-  $("clearFilter").addEventListener("click", ()=>{ $("fMonth").value=""; render(); });
-
-  $("list").addEventListener("click", async (ev)=>{
-    if (!ev.target.closest(".r-del")) return;
-    const row = ev.target.closest(".rap"); const id = row.dataset.id;
-    const rap = all.find(r=>r.id===id); if(!rap) return;
-    if (!confirm(`Supprimer le rapport du ${frDate(rap.date)} ?\n\nToutes les données du jour (ventes, achats, mouvements, sessions serveuses…) seront effacées définitivement.`)) return;
-
-    const sid = rap.session_id;
-
-    // 1. Restaurer le stock des ventes supprimées
-    if (sid){
-      const { data: ventes } = await db.from("ventes_session").select("produit_id,qty").eq("session_id", sid);
-      const stockMap = {};
-      (ventes||[]).forEach(v=>{ if(v.produit_id) stockMap[v.produit_id] = (stockMap[v.produit_id]||0)+(v.qty||0); });
-      await Promise.all(Object.entries(stockMap).map(async ([pid, qty])=>{
-        const { data:p } = await db.from("produits").select("stock_actuel").eq("id",pid).maybeSingle();
-        if (p) await db.from("produits").update({ stock_actuel:(p.stock_actuel||0)+qty }).eq("id",pid);
-      }));
-    }
-
-    // 2. Supprimer toutes les données liées à la session
-    const deletes = [];
-    if (sid){
-      deletes.push(db.from("sessions_serveuse").delete().eq("session_caisse_id", sid));
-      deletes.push(db.from("ventes_session").delete().eq("session_id", sid));
-      deletes.push(db.from("sorties_chicha").delete().eq("session_id", sid));
-      deletes.push(db.from("verifications_staff").delete().eq("session_id", sid));
-      deletes.push(db.from("mouvements_caisse").delete().eq("session_id", sid));
-    }
-    deletes.push(db.from("achats").delete().eq("date", rap.date));
-    await Promise.all(deletes);
-
-    // 3. Supprimer le rapport puis la session caisse
-    const { error } = await db.from("rapports").delete().eq("id", id);
-    if (error){ toast("Erreur de suppression","ko"); console.error(error); return; }
-    if (sid) await db.from("sessions_caisse").delete().eq("id", sid);
-
-    await ML.logAction(`Suppression complète rapport N°${rap.num} (${rap.date})`);
-    toast("Rapport et toutes données du jour supprimés","ok");
-    load();
+  /* ── FORMULAIRE ─────────────────────────────────────────────── */
+  $("toggleBtn").addEventListener("click", () => {
+    const open = !$("saisiePan").classList.contains("open");
+    $("saisiePan").classList.toggle("open", open);
+    $("toggleBtn").textContent = open ? "Fermer" : "+ Saisir";
+  });
+  $("cancelBtn").addEventListener("click", () => {
+    $("saisiePan").classList.remove("open");
+    $("toggleBtn").textContent = "+ Saisir";
   });
 
-  $("exportBtn").addEventListener("click", ()=>{
+  function refreshNet() {
+    const rec = (Number($("sChicha").value) || 0) + (Number($("sBoissons").value) || 0);
+    const dep = (Number($("sAchats").value) || 0) + (Number($("sDepenses").value) || 0);
+    const net = rec - dep;
+    $("sNetPrev").textContent = gnf(net);
+    $("sNetPrev").style.color = net < 0 ? "var(--ko)" : "var(--gold)";
+  }
+  ["sChicha", "sBoissons", "sAchats", "sDepenses"].forEach(id => $(id).addEventListener("input", refreshNet));
+
+  async function getCfgAssoc() {
+    if (_cfg) return;
+    const [{ data: cfgRows }, { data: assoc }] = await Promise.all([
+      db.from("config").select("key,value"),
+      db.from("associes").select("nom,prenom,pourcentage").not("actif", "is", false),
+    ]);
+    _cfg = {}; (cfgRows || []).forEach(r => _cfg[r.key] = r.value);
+    _assoc = assoc || [];
+  }
+
+  function dailyPart(net) {
+    const partLounge = Number(_cfg.part_lounge ?? 10);
+    const assocSum = _assoc.reduce((a, x) => a + (Number(x.pourcentage) || 0), 0);
+    const ownerPct = _cfg.owner_pct != null ? Number(_cfg.owner_pct) : Math.max(0, 100 - assocSum);
+    const distribuable = Math.max(0, net) * (100 - partLounge) / 100;
+    return {
+      part_lounge: partLounge,
+      distribuable: Math.round(distribuable),
+      owner: Math.round(distribuable * ownerPct / 100),
+      associes: _assoc.map(a => ({
+        nom: ((a.prenom ? a.prenom + " " : "") + a.nom).trim(),
+        pct: Number(a.pourcentage) || 0,
+        montant: Math.round(distribuable * (Number(a.pourcentage) || 0) / 100),
+      })),
+    };
+  }
+
+  $("sauveBtn").addEventListener("click", async () => {
+    if (saving) return;
+    const date = $("sDate").value;
+    if (!date) { toast("Choisissez une date", "ko"); return; }
+    if (date >= todayISO()) { toast("La date doit être dans le passé", "ko"); return; }
+
+    const ch  = Math.round(Number($("sChicha").value)   || 0);
+    const bo  = Math.round(Number($("sBoissons").value)  || 0);
+    const ach = Math.round(Number($("sAchats").value)    || 0);
+    const dep = Math.round(Number($("sDepenses").value)  || 0);
+    const rec = ch + bo;
+    const totalAchats = ach + dep;
+    const net = rec - totalAchats;
+    const note = $("sNote").value.trim();
+
+    // Vérifier doublon
+    const { data: ex } = await db.from("rapports").select("id").eq("date", date).maybeSingle();
+    if (ex) { toast("Un rapport existe déjà pour cette date", "ko"); return; }
+
+    saving = true; $("sauveBtn").disabled = true;
+    try {
+      await getCfgAssoc();
+      const { data: mx } = await db.from("rapports").select("num").order("num", { ascending: false }).limit(1);
+      const nextNum = (mx?.[0]?.num ?? 0) + 1;
+
+      const achatsRows = [];
+      if (ach)  achatsRows.push({ label: "Achats fournisseurs", montant: ach });
+      if (dep)  achatsRows.push({ label: "Dépenses diverses",   montant: dep });
+      if (note) achatsRows.push({ label: "Note", montant: 0, note });
+
+      const { error } = await db.from("rapports").insert({
+        date, num: nextNum,
+        session_id:     null,
+        total_chicha:   ch,
+        total_boissons: bo,
+        total_achats:   totalAchats,
+        recettes:       rec,
+        net,
+        manager:        ML.getExtra().nom || "Manager",
+        caissier:       null,
+        part:           dailyPart(net),
+        chicha_rows:    {},
+        boissons_rows:  {},
+        achats_rows:    achatsRows,
+      });
+
+      if (error) {
+        toast(error.code === "23505" ? "Rapport déjà existant pour cette date" : "Erreur : " + error.message, "ko");
+        return;
+      }
+
+      await ML.logAction(`Saisie manuelle rapport #${nextNum} — ${date} — net ${gnf(net)}`);
+      toast("Rapport enregistré", "ok");
+
+      // Reset
+      ["sChicha","sBoissons","sAchats","sDepenses"].forEach(id => $(id).value = "0");
+      $("sNote").value = "";
+      refreshNet();
+      $("saisiePan").classList.remove("open");
+      $("toggleBtn").textContent = "+ Saisir";
+      await load();
+    } catch(e) {
+      console.error(e); toast("Erreur", "ko");
+    } finally {
+      saving = false; $("sauveBtn").disabled = false;
+    }
+  });
+
+  /* ── FILTRES & EXPORT ───────────────────────────────────────── */
+  $("fMonth").addEventListener("change", render);
+  $("clearFilter").addEventListener("click", () => { $("fMonth").value = ""; render(); });
+
+  $("exportBtn").addEventListener("click", () => {
     const rows = filtered();
-    if (!rows.length){ toast("Rien à exporter",""); return; }
-    const header = ["Date","N°","Recettes","Achats","Net","Manager","Caissiere"];
-    const lines = rows.map(r=>[r.date, r.num, r.recettes||0, r.total_achats||0, r.net||0, r.manager||"", r.caissier||""]);
-    const csv = [header, ...lines].map(l=>l.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\r\n");
-    const blob = new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" });
+    if (!rows.length) { toast("Rien à exporter", ""); return; }
+    const header = ["Date","N°","Recettes","Achats","Net","Manager","Source"];
+    const lines  = rows.map(r => [
+      r.date, r.num, r.recettes||0, r.total_achats||0, r.net||0,
+      r.manager||"", r.session_id ? "session" : "manuel",
+    ]);
+    const csv = [header, ...lines]
+      .map(l => l.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "rapports_medellin_" + todayISO() + ".csv";
     a.click();
     URL.revokeObjectURL(a.href);
-    toast("Export généré","ok");
+    toast("Export généré", "ok");
   });
 
-  load().catch((e)=>{ console.error(e); toast("Erreur de chargement","ko"); });
+  /* ── SUPPRESSION ────────────────────────────────────────────── */
+  $("list").addEventListener("click", async (ev) => {
+    if (!ev.target.closest(".r-del")) return;
+    const row = ev.target.closest(".rap");
+    const id  = row.dataset.id;
+    const rap = all.find(r => r.id === id); if (!rap) return;
+
+    const isManual = !rap.session_id;
+    const msg = isManual
+      ? `Supprimer la saisie manuelle du ${frDate(rap.date)} ?`
+      : `Supprimer le rapport du ${frDate(rap.date)} ?\n\nToutes les données du jour (ventes, achats, mouvements…) seront effacées définitivement.`;
+    if (!confirm(msg)) return;
+
+    const sid = rap.session_id;
+
+    if (sid) {
+      const { data: ventes } = await db.from("ventes_session").select("produit_id,qty").eq("session_id", sid);
+      const stockMap = {};
+      (ventes || []).forEach(v => { if (v.produit_id) stockMap[v.produit_id] = (stockMap[v.produit_id] || 0) + (v.qty || 0); });
+      await Promise.all(Object.entries(stockMap).map(async ([pid, qty]) => {
+        const { data: p } = await db.from("produits").select("stock_actuel").eq("id", pid).maybeSingle();
+        if (p) await db.from("produits").update({ stock_actuel: (p.stock_actuel || 0) + qty }).eq("id", pid);
+      }));
+      await Promise.all([
+        db.from("sessions_serveuse").delete().eq("session_caisse_id", sid),
+        db.from("ventes_session").delete().eq("session_id", sid),
+        db.from("sorties_chicha").delete().eq("session_id", sid),
+        db.from("verifications_staff").delete().eq("session_id", sid),
+        db.from("mouvements_caisse").delete().eq("session_id", sid),
+        db.from("achats").delete().eq("date", rap.date),
+      ]);
+    }
+
+    const { error } = await db.from("rapports").delete().eq("id", id);
+    if (error) { toast("Erreur de suppression", "ko"); return; }
+    if (sid) await db.from("sessions_caisse").delete().eq("id", sid);
+
+    await ML.logAction(`Suppression rapport N°${rap.num} (${rap.date})`);
+    toast("Rapport supprimé", "ok");
+    load();
+  });
+
+  load().catch(e => { console.error(e); toast("Erreur de chargement", "ko"); });
 </script>
 </body></html>

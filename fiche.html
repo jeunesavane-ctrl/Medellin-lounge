@@ -67,16 +67,28 @@
       db.from("presences").select("statut").eq("employe_id",meId).gte("date",start).lt("date",end),
       db.from("justifications").select("id").eq("employe_id",meId).eq("type","absence").eq("statut","approuvee").gte("date",start).lt("date",end),
       db.from("avances").select("*").eq("employe_id",meId).order("date",{ascending:false}),
-      db.from("salaires_verses").select("net_verse,paye_le").eq("employe_id",meId).eq("mois",ym).maybeSingle(),
+      db.from("salaires_verses").select("*").eq("employe_id",meId).eq("mois",ym).maybeSingle(),
     ]);
-    const absC=(pres||[]).filter(p=>p.statut==="absent").length;
-    const retC=(pres||[]).filter(p=>p.statut==="retard").length;
-    const absNJ=absC-((just||[]).length);
-    let sancAbs=0; if(absNJ===2) sancAbs=Math.round(brut*0.10); else if(absNJ>=3) sancAbs=Math.round(brut*0.15);
-    const sancRet=retC>=5?Math.round(brut*0.10):0;
-    const avancesDed=(av||[]).filter(a=>a.statut==="approuvee"&&!a.rembourse).reduce((a,x)=>a+(x.montant||0),0);
-    const { dette, surplus } = await ecartsMois(emp, ym);
-    const net = Math.max(0, brut - sancAbs - sancRet - avancesDed - dette + surplus);
+
+    // Si déjà versé, on affiche le détail figé au moment du paiement (jamais recalculé
+    // en direct : une avance approuvée après coup ne doit pas sembler avoir été déduite
+    // d'un salaire déjà payé).
+    let absNJ, sancAbs, retC, sancRet, avancesDed, dette, surplus, net;
+    if (paye) {
+      absNJ = paye.nb_absences_nj||0; sancAbs = paye.sanction_montant||0;
+      retC = paye.nb_retards||0; sancRet = paye.sanction_retard_montant||0;
+      avancesDed = paye.avances_deduites||0; dette = paye.ecarts_deduits||0;
+      surplus = paye.surplus_caisse||0; net = paye.net_verse;
+    } else {
+      const absC=(pres||[]).filter(p=>p.statut==="absent").length;
+      retC=(pres||[]).filter(p=>p.statut==="retard").length;
+      absNJ=absC-((just||[]).length);
+      sancAbs=0; if(absNJ===2) sancAbs=Math.round(brut*0.10); else if(absNJ>=3) sancAbs=Math.round(brut*0.15);
+      sancRet=retC>=5?Math.round(brut*0.10):0;
+      avancesDed=(av||[]).filter(a=>a.statut==="approuvee"&&!a.rembourse).reduce((a,x)=>a+(x.montant||0),0);
+      ({ dette, surplus } = await ecartsMois(emp, ym));
+      net = Math.max(0, brut - sancAbs - sancRet - avancesDed - dette + surplus);
+    }
 
     const statutLine = paye
       ? `<div class="tag tag-ok mb">Salaire versé le ${escHtml(frDateShort(paye.paye_le))} — ${gnf(paye.net_verse)}</div>`
@@ -86,14 +98,14 @@
       <div class="card">
         <h2 style="margin-top:0">${escHtml(((emp.prenom?emp.prenom+" ":"")+emp.nom).trim())} — ${escHtml(emp.role)}</h2>
         ${statutLine}
-        <div class="sumrow"><span>Salaire de base</span><b>${gnf(brut)}</b></div>
+        <div class="sumrow"><span>Salaire de base</span><b>${gnf(paye?paye.salaire_brut:brut)}</b></div>
         <div class="sumrow"><span>Absences non justifiées</span><b>${absNJ>0?absNJ:0}</b></div>
         <div class="sumrow"><span>Sanction absences</span><b class="neg">− ${gnf(sancAbs)}</b></div>
         <div class="sumrow"><span>Retards (${retC})</span><b class="neg">− ${gnf(sancRet)}</b></div>
         <div class="sumrow"><span>Avances à déduire</span><b class="neg">− ${gnf(avancesDed)}</b></div>
         <div class="sumrow"><span>Écarts (dettes)</span><b class="neg">− ${gnf(dette)}</b></div>
         ${surplus?`<div class="sumrow"><span>Bonus (excédents)</span><b class="pos2" style="color:var(--ok)">+ ${gnf(surplus)}</b></div>`:""}
-        <div class="sumrow tot"><span>${paye?"Net versé":"Net estimé"}</span><b>${gnf(paye?paye.net_verse:net)}</b></div>
+        <div class="sumrow tot"><span>${paye?"Net versé":"Net estimé"}</span><b>${gnf(net)}</b></div>
       </div>
       <div class="card">
         <h2 style="margin-top:0">Mes avances</h2>

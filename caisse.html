@@ -20,6 +20,10 @@
   .mvt { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); font-size:14px; }
   .ro-note { background:rgba(224,161,58,.12); border:1px solid var(--warn); color:var(--warn);
              padding:10px 14px; border-radius:10px; font-weight:600; margin-bottom:14px; }
+  .bon-row { display:flex; justify-content:space-between; align-items:center; gap:10px;
+             padding:9px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .bon-row .bmeta { color:var(--muted); font-size:12px; }
+  .bon-row .btag { color:var(--warn); font-size:11px; font-weight:700; }
 </style>
 </head><body>
 <div id="toast"></div>
@@ -36,6 +40,24 @@
       <input id="fond" type="number" min="0" style="margin:0">
       <button class="btn btn-sm" id="saveFond" style="width:auto">OK</button>
     </div>
+  </div>
+
+  <!-- Bons chicha -->
+  <div class="card" id="bonsCard">
+    <h2 style="margin-top:0">Bons chicha</h2>
+    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Le chichaman ne sort un chicha que si un bon est créé ici.</p>
+    <div class="twoin">
+      <div><label>Produit</label><select id="bProd" style="margin:0"></select></div>
+      <div><label>Quantité</label><input id="bQty" type="number" min="1" value="1" style="margin:0"></div>
+    </div>
+    <label style="margin-top:10px">Arôme</label>
+    <input id="bArome" type="text" list="aromeList" placeholder="ex : Double pomme, Menthe…">
+    <datalist id="aromeList"></datalist>
+    <label>Table / demandé par</label>
+    <input id="bDemande" type="text" list="demandeList" placeholder="ex : Table 4, Fatoumata, comptoir…">
+    <datalist id="demandeList"></datalist>
+    <button class="btn mt" id="addBon" style="width:auto">Créer le bon</button>
+    <div id="bonsList" class="mt"></div>
   </div>
 
   <!-- Par serveuse -->
@@ -92,7 +114,7 @@
 
   const role = ML.getRole();
   const meId = ML.getExtra().employe_id || null;
-  const st = { session:null, ventes:[], verifs:{}, mvts:[], achats:0, empMap:{}, caissiers:[], sessServs:[], sub:null, closing:false };
+  const st = { session:null, ventes:[], verifs:{}, mvts:[], achats:0, empMap:{}, caissiers:[], sessServs:[], sub:null, closing:false, chichaProds:[], bons:[] };
 
   const isAssoc = role === "associe";
   function isOpen(){ return st.session && st.session.statut === "ouvert"; }
@@ -107,20 +129,35 @@
     return data;
   }
 
+  // Requête isolée : si la table bons_chicha n'existe pas encore (migration pas
+  // encore passée en base), le reste de la caisse doit continuer à fonctionner.
+  async function loadBons(){
+    try {
+      const { data, error } = await db.from("bons_chicha").select("*")
+        .eq("session_id", st.session.id).eq("statut","en_attente").order("created_at");
+      if (error) throw error;
+      return data || [];
+    } catch(e) { console.error("bons_chicha:", e); return []; }
+  }
+
   async function loadAll(){
     st.session = await ensureSession();
-    const [{ data:ventes }, { data:verifs }, { data:mvts }, { data:achats }, { data:emps }, { data:sessServs }] = await Promise.all([
+    const [{ data:ventes }, { data:verifs }, { data:mvts }, { data:achats }, { data:emps }, { data:sessServs }, { data:chichaProds }, { data:tables }] = await Promise.all([
       db.from("ventes_session").select("*").eq("session_id", st.session.id),
       db.from("verifications_staff").select("*").eq("session_id", st.session.id),
       db.from("mouvements_caisse").select("*").eq("session_id", st.session.id).order("created_at"),
       db.from("achats_session").select("montant").eq("session_id", st.session.id),
       db.from("employes").select("id,prenom,nom,role"),
       db.from("sessions_serveuse").select("*").eq("date", todayISO()).order("created_at"),
+      db.from("produits").select("id,nom").eq("type","chicha").not("actif","is",false).order("nom"),
+      db.from("tables_lounge").select("label").not("actif","is",false).order("ordre"),
     ]);
     st.ventes = ventes||[]; st.mvts = mvts||[];
     st.achats = (achats||[]).reduce((a,x)=>a+(x.montant||0),0);
     st.verifs = {}; (verifs||[]).forEach(v=>st.verifs[v.employe_id]=v);
     st.sessServs = sessServs||[];
+    st.chichaProds = chichaProds||[];
+    st.bons = await loadBons();
     st.empMap = {}; st.caissiers = [];
     (emps||[]).forEach(e=>{ st.empMap[e.id]=((e.prenom?e.prenom+" ":"")+(e.nom||"")).trim(); if(e.role==="caissier") st.caissiers.push(e); });
 
@@ -130,9 +167,15 @@
     $("totalOm").value = st.session.total_om_verifie ?? "";
     $("note").value = st.session.note_caissier || "";
 
+    $("bProd").innerHTML = st.chichaProds.map(p=>`<option value="${escHtml(p.id)}">${escHtml(p.nom)}</option>`).join("") || `<option value="">Aucun produit chicha</option>`;
+    $("demandeList").innerHTML = (tables||[]).map(t=>`<option value="${escHtml(t.label)}">`).join("")
+      + (emps||[]).filter(e=>["staff","caissier"].includes(e.role)).map(e=>`<option value="${escHtml(((e.prenom?e.prenom+" ":"")+(e.nom||"")).trim())}">`).join("")
+      + `<option value="Comptoir">`;
+
     setupReadOnly();
     renderServeuses();
     renderMvts();
+    renderBons();
     setupCaissierPick();
     recompute();
   }
@@ -238,6 +281,54 @@
     st.mvts = data||[]; renderMvts(); recompute();
   });
 
+  // -------- Bons chicha --------
+  function fmtElapsed(ts){
+    const min = Math.max(0, Math.round((Date.now()-new Date(ts).getTime())/60000));
+    return min<1 ? "à l'instant" : min+" min";
+  }
+  function renderBons(){
+    const el = $("bonsList");
+    if (!st.bons.length){ el.innerHTML = `<p class="muted">Aucun bon en attente.</p>`; return; }
+    el.innerHTML = st.bons.map(b=>`
+      <div class="bon-row" data-id="${escHtml(b.id)}">
+        <div>
+          <div><b>${escHtml(b.produit_nom||"")}</b> ×${b.qty}${b.arome?` — ${escHtml(b.arome)}`:""}</div>
+          <div class="bmeta">${escHtml(b.demande_par||"—")} · il y a ${fmtElapsed(b.created_at)}</div>
+        </div>
+        <span class="btag">⏳ En attente</span>
+        <button class="btn btn-sm btn-ghost b-cancel" style="width:auto">Annuler</button>
+      </div>`).join("");
+    if (readOnly()) el.querySelectorAll("button").forEach(b=>b.disabled=true);
+  }
+  $("addBon").addEventListener("click", async ()=>{
+    if (readOnly()) return;
+    const produit_id = $("bProd").value;
+    if (!produit_id){ toast("Aucun produit chicha disponible","ko"); return; }
+    const qty = Math.max(1, Math.round(Number($("bQty").value)||1));
+    const produit_nom = st.chichaProds.find(p=>p.id===produit_id)?.nom || "";
+    const arome = $("bArome").value.trim()||null;
+    const demande_par = $("bDemande").value.trim()||null;
+    const { data, error } = await db.from("bons_chicha").insert({
+      session_id: st.session.id, produit_id, produit_nom, arome, qty, demande_par,
+      cree_par: meId,
+    }).select().single();
+    if (error){ toast("Erreur","ko"); return; }
+    st.bons.push(data); renderBons();
+    $("bQty").value = 1; $("bArome").value = ""; $("bDemande").value = "";
+    await ML.logAction(`Bon chicha créé — ${produit_nom} ×${qty}${arome?" ("+arome+")":""}`);
+    toast("Bon créé","ok");
+  });
+  $("bonsList").addEventListener("click", async (ev)=>{
+    if (readOnly()) return;
+    const row = ev.target.closest(".b-cancel"); if (!row) return;
+    const card = ev.target.closest(".bon-row"); const id = card.dataset.id;
+    if (!confirm("Annuler ce bon ?")) return;
+    const { error } = await db.from("bons_chicha").update({ statut:"annule" }).eq("id", id).eq("statut","en_attente");
+    if (error){ toast("Erreur","ko"); return; }
+    st.bons = st.bons.filter(b=>b.id!==id); renderBons();
+    toast("Bon annulé","ok");
+  });
+
   // -------- Caissière responsable --------
   function setupCaissierPick(){
     if (role==="caissier"){ $("caissierPick").style.display="none"; return; }
@@ -330,6 +421,10 @@
         const { data } = await db.from("achats_session").select("montant").eq("session_id", st.session.id);
         st.achats = (data||[]).reduce((a,x)=>a+(x.montant||0),0);
         recompute();
+      })
+      .on("postgres_changes",{event:"*",schema:"public",table:"bons_chicha"}, async ()=>{
+        const { data } = await db.from("bons_chicha").select("*").eq("session_id", st.session.id).eq("statut","en_attente").order("created_at");
+        st.bons = data||[]; renderBons();
       })
       .subscribe();
   }

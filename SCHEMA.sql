@@ -336,8 +336,25 @@ CREATE TABLE IF NOT EXISTS votes_prop (
 );
 ALTER TABLE votes_prop DISABLE ROW LEVEL SECURITY;
 
+-- 23. bons_chicha (lien caissière → chichamen ; le stock bouge à la validation, pas à la vente)
+CREATE TABLE IF NOT EXISTS bons_chicha (
+  id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  session_id   UUID NOT NULL REFERENCES sessions_caisse(id),
+  produit_id   UUID REFERENCES produits(id),
+  produit_nom  TEXT,
+  arome        TEXT,
+  qty          INTEGER NOT NULL DEFAULT 1,
+  demande_par  TEXT,
+  statut       TEXT NOT NULL DEFAULT 'en_attente' CHECK (statut IN ('en_attente','servi','annule')),
+  cree_par     UUID REFERENCES employes(id),
+  servi_par    UUID REFERENCES employes(id),
+  servi_le     TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE bons_chicha DISABLE ROW LEVEL SECURITY;
+
 -- =====================================================================
--- FIN — 22 tables créées.
+-- FIN — 23 tables créées.
 -- Étape suivante (1) : shared.js + shared.css.
 -- Bootstrap auth : insérer pin_owner / owner_nom dans config avant
 --   le premier login (sera fait via parametres.html ou seed manuel).

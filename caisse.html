@@ -24,6 +24,13 @@
              padding:9px 0; border-bottom:1px solid var(--line); font-size:13px; }
   .bon-row .bmeta { color:var(--muted); font-size:12px; }
   .bon-row .btag { color:var(--warn); font-size:11px; font-weight:700; }
+  .stat-strip { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
+  @media (min-width:680px){ .stat-strip { grid-template-columns:repeat(4,1fr); } }
+  .stat { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm);
+          padding:12px 14px; }
+  .stat .sv { font-size:17px; font-weight:700; color:var(--gold); letter-spacing:-.2px; }
+  .stat .sv.warn { color:var(--warn); }
+  .stat .sl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px; margin-top:2px; }
 </style>
 </head><body>
 <div id="toast"></div>
@@ -32,6 +39,14 @@
   <h1>Caisse</h1>
   <div class="ml-sub" id="sub"></div>
   <div id="roNote" class="ro-note" style="display:none"></div>
+
+  <!-- Ventes du jour (temps réel) -->
+  <div class="stat-strip">
+    <div class="stat"><div class="sv" id="vjTotal">—</div><div class="sl">Ventes du jour</div></div>
+    <div class="stat"><div class="sv" id="vjEsp">—</div><div class="sl">Espèces</div></div>
+    <div class="stat"><div class="sv" id="vjOm">—</div><div class="sl">Orange Money</div></div>
+    <div class="stat"><div class="sv warn" id="vjPend">—</div><div class="sl">À régler</div></div>
+  </div>
 
   <!-- Fond de caisse -->
   <div class="card" id="fondCard">
@@ -184,12 +199,23 @@
       + `<option value="Comptoir">`;
 
     setupReadOnly();
+    renderVentesJour();
     renderServeuses();
     renderMvts();
     renderBons();
     renderCommandes();
     setupCaissierPick();
     recompute();
+  }
+
+  // -------- Ventes du jour (stats temps réel) --------
+  function renderVentesJour(){
+    const sum = p => st.ventes.filter(v=>v.paiement===p).reduce((a,v)=>a+(v.total||0),0);
+    const esp = sum("especes"), om = sum("om"), pend = sum("a_regler");
+    $("vjTotal").textContent = gnf(esp+om+pend);
+    $("vjEsp").textContent   = gnf(esp);
+    $("vjOm").textContent    = gnf(om);
+    $("vjPend").textContent  = gnf(pend);
   }
 
   function statutLabel(){
@@ -465,7 +491,7 @@
     st.sub = db.channel("caisse")
       .on("postgres_changes",{event:"*",schema:"public",table:"ventes_session"}, async ()=>{
         const { data } = await db.from("ventes_session").select("*").eq("session_id", st.session.id);
-        st.ventes = data||[]; renderServeuses(); renderCommandes(); recompute();
+        st.ventes = data||[]; renderVentesJour(); renderServeuses(); renderCommandes(); recompute();
       })
       .on("postgres_changes",{event:"*",schema:"public",table:"sessions_serveuse"}, async (payload)=>{
         if (payload.new && payload.new.date === todayISO()) await reloadSessions();

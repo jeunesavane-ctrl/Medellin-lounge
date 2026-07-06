@@ -184,10 +184,13 @@ CREATE TABLE IF NOT EXISTS achats_session (
 ALTER TABLE achats_session DISABLE ROW LEVEL SECURITY;
 
 -- 13. sorties_chicha (STOCK uniquement — jamais financier)
+--     produit_id = l'arôme sorti (Love/Café/Gibiar/Hawai) ; nécessaire pour
+--     restaurer le BON stock à l'annulation d'une sortie
 CREATE TABLE IF NOT EXISTS sorties_chicha (
   id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   session_id UUID NOT NULL REFERENCES sessions_caisse(id),
   employe_id UUID REFERENCES employes(id),
+  produit_id UUID REFERENCES produits(id),
   arome      TEXT,
   qty        INTEGER NOT NULL DEFAULT 1,
   valide     BOOLEAN NOT NULL DEFAULT false,

@@ -26,3 +26,8 @@ ALTER TABLE bons_chicha DISABLE ROW LEVEL SECURITY;
 CREATE INDEX IF NOT EXISTS idx_bons_chicha_session  ON bons_chicha(session_id);
 CREATE INDEX IF NOT EXISTS idx_bons_chicha_statut   ON bons_chicha(statut);
 CREATE INDEX IF NOT EXISTS idx_bons_chicha_vente_id ON bons_chicha(vente_id);
+
+-- sorties_chicha : mémoriser QUEL produit (arôme) est sorti.
+-- Sans ça, l'annulation d'une sortie restaurait le stock du mauvais produit
+-- (le premier alphabétique) — critique depuis que chaque arôme est un produit.
+ALTER TABLE sorties_chicha ADD COLUMN IF NOT EXISTS produit_id UUID REFERENCES produits(id);

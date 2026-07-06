@@ -36,6 +36,11 @@
   .btn-del { background:transparent; border:none; color:var(--ko); cursor:pointer; font-size:15px; line-height:1; padding:2px 5px; border-radius:4px; }
   .btn-del:hover { background:rgba(242,107,98,.15); }
   .sess-card { border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:8px; }
+  .prod-pick h3 { grid-column:1/-1; margin:10px 0 2px; }
+  .bstat { font-size:10px; font-weight:700; white-space:nowrap; }
+  .bstat.ok   { color:var(--ok); }
+  .bstat.prep { color:var(--warn); }
+  .bstat.wait { color:var(--muted); }
   .sumrow { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); font-size:14px; }
   .sumrow:last-child { border:none; }
 </style>
@@ -130,8 +135,33 @@
   const st = {
     sessionCaisse: null, sessionServeuse: null, allSessions: [],
     tables: [], produits: [], empMap: {}, ventes: [],
-    curTable: null, selProd: null, selPay: "especes", sub: null
+    curTable: null, selProd: null, selPay: "especes", sub: null,
+    bonsMap: {},   // vente_id → statut du bon chicha (en_attente / servi)
   };
+
+  // Statut des bons chicha liés à mes ventes — requête isolée : si la table
+  // n'existe pas encore (migration pas passée), les badges restent muets.
+  let _bonsOk = false;
+  async function loadBons() {
+    st.bonsMap = {};
+    try {
+      const { data, error } = await db.from("bons_chicha")
+        .select("vente_id,statut").eq("session_id", st.sessionCaisse.id).not("vente_id","is",null);
+      if (error) throw error;
+      _bonsOk = true;
+      (data||[]).forEach(b => { if (b.statut!=="annule") st.bonsMap[b.vente_id] = b.statut; });
+    } catch(e) { _bonsOk = false; }
+  }
+
+  function bonBadge(v) {
+    if (!_bonsOk) return "";
+    const prod = st.produits.find(p => p.id === v.produit_id);
+    if (!prod || prod.type !== "chicha") return "";
+    const s = st.bonsMap[v.id];
+    if (s === "servi")      return ` <span class="bstat ok">✓ prêt</span>`;
+    if (s === "en_attente") return ` <span class="bstat prep">🔥 en préparation</span>`;
+    return ` <span class="bstat wait">⏳ en caisse</span>`;
+  }
 
   function showView(id) {
     ["viewHome","viewSession","viewVente","viewTerminer"].forEach(v => {
@@ -168,7 +198,7 @@
     const active = st.allSessions.find(s => s.statut === "en_cours");
     if (active) {
       st.sessionServeuse = active;
-      await loadVentes();
+      await Promise.all([loadVentes(), loadBons()]);
       showView("viewSession");
       renderSessionInfo();
       renderGrid();
@@ -269,7 +299,7 @@
       const isPending = v.paiement === "a_regler";
       return `<div class="vrow">
         <span>${escHtml(v.produit_nom)} ×${v.qty} <span class="muted">(${escHtml(v.table_label||"")})</span>
-          ${isPending ? '<span class="tag-pending"> À régler</span>' : `<span class="muted"> ${v.paiement==="especes"?"Esp":"OM"}</span>`}
+          ${isPending ? '<span class="tag-pending"> À régler</span>' : `<span class="muted"> ${v.paiement==="especes"?"Esp":"OM"}</span>`}${bonBadge(v)}
         </span>
         <span class="vrow-actions">
           <b>${gnf(v.total)}</b>
@@ -302,11 +332,20 @@
     await loadVentes(); renderSessionVentes(); showView("viewSession");
   });
 
+  const TYPE_ORDER = { chicha:0, boisson:1, autre:2 };
+  const TYPE_LBL   = { chicha:"Chicha", boisson:"Boissons", autre:"Autres" };
   function renderProdPick() {
-    $("prodPick").innerHTML = st.produits.map(p => `
+    const sorted = [...st.produits].sort((a,b) =>
+      (TYPE_ORDER[a.type]??9)-(TYPE_ORDER[b.type]??9) || a.nom.localeCompare(b.nom,"fr"));
+    let html = "", lastType = null;
+    for (const p of sorted) {
+      if (p.type !== lastType) { html += `<h3>${escHtml(TYPE_LBL[p.type]||p.type)}</h3>`; lastType = p.type; }
+      html += `
       <div class="pp${st.selProd&&st.selProd.id===p.id?" sel":""}" data-id="${escHtml(p.id)}">
         <div class="pn">${escHtml(p.nom)}</div><div class="pr">${gnf(p.prix_defaut||0)}</div>
-      </div>`).join("") || `<p class="muted">Aucun produit.</p>`;
+      </div>`;
+    }
+    $("prodPick").innerHTML = html || `<p class="muted">Aucun produit.</p>`;
   }
 
   $("prodPick").addEventListener("click", (ev) => {
@@ -336,7 +375,7 @@
       const isPending = v.paiement === "a_regler";
       return `<div class="vrow">
         <span>${escHtml(v.produit_nom)} ×${v.qty}
-          ${isPending ? '<span class="tag-pending"> À régler</span>' : `<span class="muted"> (${v.paiement==="especes"?"Esp":"OM"})</span>`}
+          ${isPending ? '<span class="tag-pending"> À régler</span>' : `<span class="muted"> (${v.paiement==="especes"?"Esp":"OM"})</span>`}${bonBadge(v)}
         </span>
         <span class="vrow-actions">
           <b>${gnf(v.total)}</b>
@@ -497,6 +536,12 @@
           renderProdPick();
           renderTotal();
         }
+      })
+      .on("postgres_changes",{event:"*",schema:"public",table:"bons_chicha"}, async () => {
+        if (!st.sessionServeuse) return;
+        await loadBons();
+        renderSessionVentes();
+        if (st.curTable && $("viewVente").style.display !== "none") renderTableVentes();
       })
       .subscribe();
   }

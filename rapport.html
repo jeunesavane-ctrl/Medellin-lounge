@@ -82,6 +82,14 @@
     return k.map(n=>`<div class="det"><span>${escHtml(n)}</span><span>${gnf(obj[n])}</span></div>`).join("");
   }
 
+  function pendingTotal(){
+    return st.ventes.filter(v=>v.paiement==="a_regler").reduce((a,v)=>a+(v.total||0),0);
+  }
+  function pendingRow(){
+    const p = pendingTotal();
+    return p ? `<div class="sumrow"><span style="color:var(--warn)">⚠ Dont "à régler" — non encaissé</span><b style="color:var(--warn)">${gnf(p)}</b></div>` : "";
+  }
+
   function renderReadonlyTotals(){
     $("content").innerHTML = `
       <div class="card">
@@ -89,6 +97,7 @@
         <h3>Chicha — ${gnf(st.autoChicha)}</h3>${rowsHtml(st.chichaRows)}
         <h3>Boissons — ${gnf(st.autoBoissons)}</h3>${rowsHtml(st.boissonsRows)}
         <div class="sumrow"><span>Achats du jour</span><b>${gnf(st.achatsTotal)}</b></div>
+        ${pendingRow()}
       </div>`;
   }
 
@@ -112,6 +121,7 @@
         <h2 style="margin-top:0">Synthèse</h2>
         <div class="sumrow"><span>Achats du jour <span class="muted">(figé)</span></span><b>${gnf(st.achatsTotal)}</b></div>
         <div class="sumrow"><span>Recettes</span><b id="sRec">—</b></div>
+        ${pendingRow()}
         <div class="sumrow big"><span>Net du jour</span><b id="sNet">—</b></div>
         <button class="btn mt" id="validBtn">Valider le rapport</button>
       </div>`;

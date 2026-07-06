@@ -177,7 +177,7 @@ const NAV = [
   { href: "dashboard.html",  label: "Tableau de bord", icon: "ti-layout-dashboard", roles: ["manager", "owner", "associe"] },
   { href: "saisie.html",     label: "Ventes",          icon: "ti-shopping-cart",    roles: ["staff"] },
   { href: "caisse.html",     label: "Caisse",          icon: "ti-cash",             roles: ["caissier", "manager", "owner", "associe"], badge: "nbadge-caisse" },
-  { href: "chicha.html",     label: "Chicha",          icon: "ti-flame",            roles: ["chicha", "manager", "owner"] },
+  { href: "chicha.html",     label: "Chicha",          icon: "ti-flame",            roles: ["chicha", "manager", "owner"], badge: "nbadge-chicha" },
   { href: "achats.html",     label: "Achats",          icon: "ti-shopping-bag",     roles: ["achats", "manager", "owner"] },
   { href: "rapport.html",    label: "Rapport",         icon: "ti-file-text",        roles: ["manager", "owner"] },
   { href: "rh.html",         label: "RH",              icon: "ti-users",            roles: ["manager", "owner"] },
@@ -249,6 +249,13 @@ async function loadNavBadges() {
         .select("id", { count: "exact", head: true })
         .eq("statut", "en_attente");
       _setBadge("nbadge-avances", count);
+    }
+    if (["chicha", "manager", "owner"].includes(role)) {
+      const { count } = await db
+        .from("bons_chicha")
+        .select("id", { count: "exact", head: true })
+        .eq("statut", "en_attente");
+      _setBadge("nbadge-chicha", count);
     }
   } catch (e) { /* badges non bloquants */ }
 }

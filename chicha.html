@@ -20,10 +20,13 @@
   .cnt-badge .d { margin-bottom:2px; }
   .so { display:grid; grid-template-columns:1fr auto auto auto auto; gap:8px; align-items:center;
         padding:10px 0; border-bottom:1px solid var(--line); }
-  .queue-row { display:flex; justify-content:space-between; align-items:center; gap:10px;
-               padding:11px 0; border-bottom:1px solid var(--line); }
+  .queue-row { display:flex; justify-content:space-between; align-items:center; gap:12px;
+               padding:14px 12px; border:1px solid var(--line); border-radius:10px;
+               background:var(--surface-2); margin-bottom:8px; }
+  .queue-row .qprod { font-size:16px; font-weight:700; }
   .queue-row .qmeta { font-size:12px; color:var(--muted); margin-top:2px; }
   .queue-row .qwait { color:var(--warn); font-size:11px; font-weight:700; white-space:nowrap; }
+  .queue-row .q-servir { padding:12px 18px; font-size:14px; }
 </style>
 </head><body>
 <div id="toast"></div>
@@ -100,6 +103,17 @@
   }
   const locked = () => !st.session || st.session.statut !== "ouvert";
 
+  // Insertion sortie avec produit_id ; si la colonne n'existe pas encore
+  // (migration pas passée), on réessaie sans pour ne pas bloquer le poste.
+  async function insertSortie(rec){
+    let { error } = await db.from("sorties_chicha").insert(rec);
+    if (error && rec.produit_id){
+      const { produit_id, ...rest } = rec;
+      ({ error } = await db.from("sorties_chicha").insert(rest));
+    }
+    return error;
+  }
+
   async function ensureSession(){
     let { data, error } = await db.from("sessions_caisse").insert({ date: todayISO() }).select().single();
     if (error && error.code === "23505") {
@@ -146,10 +160,9 @@
     el.innerHTML = st.queue.map(b=>`
       <div class="queue-row" data-id="${escHtml(b.id)}">
         <div>
-          <div><b>${escHtml(b.produit_nom||"")}</b> ×${b.qty}</div>
-          <div class="qmeta">${escHtml(b.demande_par||"—")}</div>
+          <div class="qprod">${escHtml(b.produit_nom||"")} ×${b.qty}</div>
+          <div class="qmeta">${escHtml(b.demande_par||"—")} · <span class="qwait">${escHtml(fmtElapsed(b.created_at))}</span></div>
         </div>
-        <span class="qwait">${escHtml(fmtElapsed(b.created_at))}</span>
         ${locked() ? "" : `<button class="btn btn-sm q-servir">✓ Prêt</button>`}
       </div>`).join("");
   }
@@ -166,8 +179,9 @@
       if (error) throw error;
       if (!upd || !upd.length) { toast("Déjà pris en charge par un collègue","ko"); await loadQueue(); return; }
 
-      await db.from("sorties_chicha").insert({
+      await insertSortie({
         session_id: st.session.id, employe_id: meId, qty: bon.qty, valide:true, type:"vente",
+        produit_id: bon.produit_id || null, arome: bon.produit_nom || null,
       });
       const prod = st.chichaProds.find(p=>p.id===bon.produit_id) || st.chichaProds[0];
       if (prod){
@@ -206,8 +220,9 @@
     if (!st.sorties.length){ el.innerHTML = `<p class="muted">Aucune sortie enregistrée.</p>`; return; }
     el.innerHTML = st.sorties.map(s=>{
       const isCadeau = s.type === "cadeau";
+      const nom = st.chichaProds.find(p=>p.id===s.produit_id)?.nom || s.arome || "Chicha";
       return `<div class="so" data-id="${escHtml(s.id)}">
-        <div><div style="font-weight:600">Chicha ×${s.qty}</div>
+        <div><div style="font-weight:600">${escHtml(nom)} ×${s.qty}</div>
           <div class="d">${escHtml(st.empMap[s.employe_id] || "")}</div></div>
         ${isCadeau
           ? `<span class="tag" style="background:rgba(224,161,58,.2);color:var(--gold);font-weight:700">🎁 Cadeau</span>`
@@ -238,8 +253,10 @@
     const produit_id = $("cProd").value;
     if (!produit_id){ toast("Aucun produit chicha disponible","ko"); return; }
     const qty = Math.max(1, Math.round(Number($("cQty").value) || 1));
-    const { error } = await db.from("sorties_chicha").insert({
+    const prodNom = st.chichaProds.find(p=>p.id===produit_id)?.nom || null;
+    const error = await insertSortie({
       session_id: st.session.id, employe_id: meId, qty, valide: false, type:"cadeau",
+      produit_id, arome: prodNom,
     });
     if (error){ toast("Erreur", "ko"); console.error(error); return; }
     const prod = st.chichaProds.find(p=>p.id===produit_id);
@@ -263,13 +280,18 @@
       const { error } = await db.from("sorties_chicha").delete().eq("id", id);
       if (error){ toast("Erreur", "ko"); return; }
       if (sortie?.qty){
-        const prod = st.chichaProds[0];
+        // Restaurer le stock du produit réellement sorti — jamais un autre par défaut
+        const prod = st.chichaProds.find(p=>p.id===sortie.produit_id)
+                  || st.chichaProds.find(p=>p.nom===sortie.arome)
+                  || null;
         if (prod){
           const nv = (Number(prod.stock_actuel)||0) + sortie.qty;
           await db.from("produits").update({ stock_actuel: nv }).eq("id", prod.id);
           prod.stock_actuel = nv;
           const srcType = sortie.type === "cadeau" ? "cadeau" : "chicha";
           await stockMvt(prod.id, sortie.qty, srcType, `Annulation ${sortie.type === "cadeau" ? "cadeau client" : "sortie chicha"} ×${sortie.qty}`);
+        } else {
+          toast("Sortie supprimée — stock à ajuster manuellement (produit inconnu)","ko");
         }
       }
       await ML.logAction("Suppression sortie chicha"); toast("Supprimé", "ok"); loadSorties();

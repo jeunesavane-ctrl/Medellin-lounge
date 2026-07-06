@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS bons_chicha (
   session_id   UUID NOT NULL REFERENCES sessions_caisse(id),
   produit_id   UUID REFERENCES produits(id),
   produit_nom  TEXT,
+  vente_id     UUID REFERENCES ventes_session(id),  -- rempli quand le bon vient de la validation d'une vente serveuse
   arome        TEXT,
   qty          INTEGER NOT NULL DEFAULT 1,
   demande_par  TEXT,                 -- ex : "Table 4", "Fatoumata", "Comptoir" — texte libre saisi par la caissière
@@ -23,5 +24,6 @@ CREATE TABLE IF NOT EXISTS bons_chicha (
   created_at   TIMESTAMPTZ DEFAULT now()
 );
 ALTER TABLE bons_chicha DISABLE ROW LEVEL SECURITY;
-CREATE INDEX IF NOT EXISTS idx_bons_chicha_session ON bons_chicha(session_id);
-CREATE INDEX IF NOT EXISTS idx_bons_chicha_statut  ON bons_chicha(statut);
+CREATE INDEX IF NOT EXISTS idx_bons_chicha_session  ON bons_chicha(session_id);
+CREATE INDEX IF NOT EXISTS idx_bons_chicha_statut   ON bons_chicha(statut);
+CREATE INDEX IF NOT EXISTS idx_bons_chicha_vente_id ON bons_chicha(vente_id);

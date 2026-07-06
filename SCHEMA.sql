@@ -337,11 +337,14 @@ CREATE TABLE IF NOT EXISTS votes_prop (
 ALTER TABLE votes_prop DISABLE ROW LEVEL SECURITY;
 
 -- 23. bons_chicha (lien caissière → chichamen ; le stock bouge à la validation, pas à la vente)
+--     vente_id renseigné quand le bon vient de la validation d'une vente serveuse (sinon créé
+--     directement par la caissière, vente_id NULL)
 CREATE TABLE IF NOT EXISTS bons_chicha (
   id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   session_id   UUID NOT NULL REFERENCES sessions_caisse(id),
   produit_id   UUID REFERENCES produits(id),
   produit_nom  TEXT,
+  vente_id     UUID REFERENCES ventes_session(id),
   arome        TEXT,
   qty          INTEGER NOT NULL DEFAULT 1,
   demande_par  TEXT,

@@ -395,10 +395,13 @@
     const vente = st.ventes.find(v=>v.id===venteId); if (!vente) return;
     btn.disabled = true;
     const produit_nom = vente.produit_nom || st.chichaProds.find(p=>p.id===vente.produit_id)?.nom || "";
+    const serveuse = st.empMap[vente.employe_id] || null;
+    const table = vente.table_label || "Comptoir";
+    const demande_par = serveuse ? `${table} · ${serveuse}` : table;
     const { data, error } = await db.from("bons_chicha").insert({
       session_id: st.session.id, produit_id: vente.produit_id, produit_nom,
       vente_id: vente.id, qty: vente.qty||1,
-      demande_par: vente.table_label || "Comptoir",
+      demande_par,
       cree_par: meId,
     }).select().single();
     if (error){ toast(error.code==="PGRST205" ? "Migration bons_chicha pas encore appliquée (Supabase)" : "Erreur","ko"); btn.disabled=false; return; }

@@ -418,9 +418,13 @@
           st.curTable.ouverte_par = meId;
         }
       }
-      await db.from("produits").update({ stock_actuel: (Number(st.selProd.stock_actuel)||0) - qty }).eq("id", st.selProd.id);
-      st.selProd.stock_actuel = (Number(st.selProd.stock_actuel)||0) - qty;
-      await stockMvt(st.selProd.id, -qty, "vente", `${st.selProd.nom} ×${qty} table ${st.curTable.label}`);
+      // Chicha : le stock ne bouge qu'à la validation du bon par le chichaman
+      // (voir chicha.html), jamais à la vente — sinon double décompte.
+      if (st.selProd.type !== "chicha") {
+        await db.from("produits").update({ stock_actuel: (Number(st.selProd.stock_actuel)||0) - qty }).eq("id", st.selProd.id);
+        st.selProd.stock_actuel = (Number(st.selProd.stock_actuel)||0) - qty;
+        await stockMvt(st.selProd.id, -qty, "vente", `${st.selProd.nom} ×${qty} table ${st.curTable.label}`);
+      }
 
       await ML.logAction(`Vente ${st.selProd.nom} ×${qty} (${st.selPay}) table ${st.curTable.label}`);
       st.selProd = null;
@@ -442,7 +446,10 @@
     if (error) { toast("Erreur suppression","ko"); return; }
     if (produitId) {
       const prod = st.produits.find(p => p.id === produitId);
-      if (prod) {
+      // Chicha : le stock n'a pas été touché à la vente (voir addVente), donc
+      // rien à restaurer ici. S'il existe un bon en attente pour cette vente,
+      // la caissière/le chichaman doivent l'annuler séparément.
+      if (prod && prod.type !== "chicha") {
         const newStock = (Number(prod.stock_actuel)||0) + qty;
         await db.from("produits").update({ stock_actuel: newStock }).eq("id", produitId);
         prod.stock_actuel = newStock;

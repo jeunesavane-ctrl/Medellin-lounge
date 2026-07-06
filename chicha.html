@@ -146,7 +146,7 @@
     el.innerHTML = st.queue.map(b=>`
       <div class="queue-row" data-id="${escHtml(b.id)}">
         <div>
-          <div><b>${escHtml(b.produit_nom||"")}</b> ×${b.qty}${b.arome?` — ${escHtml(b.arome)}`:""}</div>
+          <div><b>${escHtml(b.produit_nom||"")}</b> ×${b.qty}</div>
           <div class="qmeta">${escHtml(b.demande_par||"—")}</div>
         </div>
         <span class="qwait">${escHtml(fmtElapsed(b.created_at))}</span>
@@ -174,9 +174,9 @@
         const nv = (Number(prod.stock_actuel)||0) - bon.qty;
         await db.from("produits").update({ stock_actuel: nv }).eq("id", prod.id);
         prod.stock_actuel = nv;
-        await stockMvt(prod.id, -bon.qty, "chicha", `Bon servi — ${bon.produit_nom||""}${bon.arome?" ("+bon.arome+")":""} pour ${bon.demande_par||"—"}`);
+        await stockMvt(prod.id, -bon.qty, "chicha", `Bon servi — ${bon.produit_nom||""} pour ${bon.demande_par||"—"}`);
       }
-      await ML.logAction(`Bon chicha servi — ${bon.produit_nom||""} ×${bon.qty}${bon.arome?" ("+bon.arome+")":""}`);
+      await ML.logAction(`Bon chicha servi — ${bon.produit_nom||""} ×${bon.qty}`);
       toast("Commande servie","ok");
       await Promise.all([loadQueue(), loadSorties()]);
     } catch(e){ console.error(e); toast("Erreur","ko"); btn.disabled=false; }

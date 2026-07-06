@@ -54,12 +54,9 @@
 
     <h3 style="margin-top:0">Créer un bon directement</h3>
     <div class="twoin">
-      <div><label>Produit</label><select id="bProd" style="margin:0"></select></div>
+      <div><label>Arôme</label><select id="bProd" style="margin:0"></select></div>
       <div><label>Quantité</label><input id="bQty" type="number" min="1" value="1" style="margin:0"></div>
     </div>
-    <label style="margin-top:10px">Arôme</label>
-    <input id="bArome" type="text" list="aromeList" placeholder="ex : Double pomme, Menthe…">
-    <datalist id="aromeList"></datalist>
     <label>Table / demandé par</label>
     <input id="bDemande" type="text" list="demandeList" placeholder="ex : Table 4, Fatoumata, comptoir…">
     <datalist id="demandeList"></datalist>
@@ -307,7 +304,7 @@
     el.innerHTML = st.bons.map(b=>`
       <div class="bon-row" data-id="${escHtml(b.id)}">
         <div>
-          <div><b>${escHtml(b.produit_nom||"")}</b> ×${b.qty}${b.arome?` — ${escHtml(b.arome)}`:""}</div>
+          <div><b>${escHtml(b.produit_nom||"")}</b> ×${b.qty}</div>
           <div class="bmeta">${escHtml(b.demande_par||"—")} · il y a ${fmtElapsed(b.created_at)}</div>
         </div>
         <span class="btag">⏳ En attente</span>
@@ -321,17 +318,16 @@
     if (!produit_id){ toast("Aucun produit chicha disponible","ko"); return; }
     const qty = Math.max(1, Math.round(Number($("bQty").value)||1));
     const produit_nom = st.chichaProds.find(p=>p.id===produit_id)?.nom || "";
-    const arome = $("bArome").value.trim()||null;
     const demande_par = $("bDemande").value.trim()||null;
     const { data, error } = await db.from("bons_chicha").insert({
-      session_id: st.session.id, produit_id, produit_nom, arome, qty, demande_par,
+      session_id: st.session.id, produit_id, produit_nom, qty, demande_par,
       cree_par: meId,
     }).select().single();
     if (error){ toast("Erreur","ko"); return; }
     st.bonsAll.push(data); st.bons = st.bonsAll.filter(b=>b.statut==="en_attente");
     renderBons();
-    $("bQty").value = 1; $("bArome").value = ""; $("bDemande").value = "";
-    await ML.logAction(`Bon chicha créé — ${produit_nom} ×${qty}${arome?" ("+arome+")":""}`);
+    $("bQty").value = 1; $("bDemande").value = "";
+    await ML.logAction(`Bon chicha créé — ${produit_nom} ×${qty}`);
     toast("Bon créé","ok");
   });
   $("bonsList").addEventListener("click", async (ev)=>{
@@ -360,24 +356,22 @@
     el.innerHTML = pending.map(v=>`
       <div class="bon-row cmd-row" data-vente-id="${escHtml(v.id)}">
         <div style="flex:1">
-          <div><b>${escHtml(v.produit_nom||"")}</b> ×${v.qty} — ${escHtml(v.table_label||"Comptoir")}</div>
-          <input class="cmd-arome" type="text" placeholder="Arôme (optionnel)" style="margin:5px 0 0;padding:6px 8px;font-size:12px">
+          <b>${escHtml(v.produit_nom||"")}</b> ×${v.qty} — ${escHtml(v.table_label||"Comptoir")}
         </div>
         <button class="btn btn-sm c-valider" style="width:auto;flex-shrink:0">Valider en bon</button>
       </div>`).join("");
-    if (readOnly()) el.querySelectorAll("input,button").forEach(x=>x.disabled=true);
+    if (readOnly()) el.querySelectorAll("button").forEach(x=>x.disabled=true);
   }
   $("commandesList").addEventListener("click", async (ev)=>{
     if (readOnly()) return;
     const btn = ev.target.closest(".c-valider"); if (!btn) return;
     const row = ev.target.closest(".cmd-row"); const venteId = row.dataset.venteId;
     const vente = st.ventes.find(v=>v.id===venteId); if (!vente) return;
-    const arome = row.querySelector(".cmd-arome")?.value.trim() || null;
     btn.disabled = true;
     const produit_nom = vente.produit_nom || st.chichaProds.find(p=>p.id===vente.produit_id)?.nom || "";
     const { data, error } = await db.from("bons_chicha").insert({
       session_id: st.session.id, produit_id: vente.produit_id, produit_nom,
-      vente_id: vente.id, arome, qty: vente.qty||1,
+      vente_id: vente.id, qty: vente.qty||1,
       demande_par: vente.table_label || "Comptoir",
       cree_par: meId,
     }).select().single();

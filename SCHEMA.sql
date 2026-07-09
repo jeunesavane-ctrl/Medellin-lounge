@@ -359,8 +359,20 @@ CREATE TABLE IF NOT EXISTS bons_chicha (
 );
 ALTER TABLE bons_chicha DISABLE ROW LEVEL SECURITY;
 
+-- 24. carnet_entrees (notes rapides ventes/dépenses hors circuit formel — manager/owner)
+CREATE TABLE IF NOT EXISTS carnet_entrees (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  date       DATE NOT NULL,
+  type       TEXT NOT NULL CHECK (type IN ('vente','depense')),
+  label      TEXT,
+  montant    INTEGER NOT NULL CHECK (montant > 0),
+  cree_par   TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE carnet_entrees DISABLE ROW LEVEL SECURITY;
+
 -- =====================================================================
--- FIN — 23 tables créées.
+-- FIN — 24 tables créées.
 -- Étape suivante (1) : shared.js + shared.css.
 -- Bootstrap auth : insérer pin_owner / owner_nom dans config avant
 --   le premier login (sera fait via parametres.html ou seed manuel).

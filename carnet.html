@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Carnet du jour — Medellin Lounge</title>
+<meta name="theme-color" content="#090709">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23160e0b'/><rect x='.5' y='.5' width='63' height='63' rx='13.5' fill='none' stroke='%23c96e48' stroke-opacity='.4'/><text x='32' y='41' font-family='Arial,Helvetica,sans-serif' font-size='23' font-weight='800' fill='%23e89872' text-anchor='middle'>ML</text></svg>">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --bg:#090709; --surface:#0e0c10; --surface-2:#141118; --surface-3:#1b1720;
+    --line:#211d28; --line-2:#2a2534;
+    --accent:#c96e48; --accent-soft:#e89872; --accent-dim:#1a0d08;
+    --gold:#f0a830;
+    --text:#f0ece6; --muted:#7a7282; --faint:#38333e;
+    --ok:#4ecf80; --ko:#e05454;
+    --radius:12px; --radius-sm:9px;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; }
+  body {
+    font-family:"Outfit", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background:var(--bg); color:var(--text); font-size:15px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    padding:20px 16px 60px;
+  }
+  main { max-width:560px; margin:0 auto; }
+
+  .top { margin-bottom:18px; }
+  .top .badge {
+    display:inline-block; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+    color:var(--accent-soft); background:var(--accent-dim); border:1px solid rgba(201,110,72,.25);
+    padding:4px 10px; border-radius:999px; margin-bottom:10px;
+  }
+  h1 { font-size:22px; font-weight:700; letter-spacing:-.2px; margin-bottom:4px; }
+  .sub { color:var(--muted); font-size:13px; }
+  .sub b { color:var(--accent-soft); }
+
+  .datebar { display:flex; align-items:center; gap:8px; margin:16px 0; }
+  .datebar input[type=date] {
+    flex:1; background:var(--surface-2); border:1px solid var(--line-2); color:var(--text);
+    padding:11px 13px; border-radius:var(--radius-sm); font-size:14px; font-family:inherit;
+  }
+  .navbtn {
+    background:var(--surface-2); border:1px solid var(--line-2); color:var(--text);
+    width:40px; height:40px; border-radius:var(--radius-sm); font-size:16px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .navbtn:active { transform:scale(.94); }
+  .today-link { font-size:12px; color:var(--accent-soft); text-decoration:underline; cursor:pointer; white-space:nowrap; }
+
+  .summary { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:18px; }
+  .scard { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 10px; text-align:center; }
+  .scard .sv { font-size:15px; font-weight:700; letter-spacing:-.2px; }
+  .scard .sl { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-top:3px; }
+  .scard.net .sv { color:var(--gold); font-size:16px; }
+  .scard.ventes .sv { color:var(--ok); }
+  .scard.depenses .sv { color:var(--ko); }
+
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:14px; }
+  .card h2 { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.8px; margin-bottom:12px; }
+
+  .form-row { display:flex; gap:8px; }
+  .form-row input[type=text] {
+    flex:2; min-width:0; background:var(--surface-2); border:1px solid var(--line-2); color:var(--text);
+    padding:11px 13px; border-radius:var(--radius-sm); font-size:14px; font-family:inherit;
+  }
+  .form-row input[type=number] {
+    flex:1; min-width:0; background:var(--surface-2); border:1px solid var(--line-2); color:var(--text);
+    padding:11px 13px; border-radius:var(--radius-sm); font-size:14px; font-family:inherit;
+  }
+  .form-row input::placeholder { color:var(--faint); }
+  .form-row input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(201,110,72,.12); }
+
+  .btn {
+    border:none; border-radius:var(--radius-sm); padding:11px 16px; font-size:14px; font-weight:600;
+    cursor:pointer; font-family:inherit; color:#f0ece6; flex-shrink:0;
+    transition:filter .15s, transform .08s;
+  }
+  .btn:active { transform:scale(.96); }
+  .btn-vente { background:var(--ok); color:#082e15; }
+  .btn-depense { background:var(--ko); color:#3a0d0d; }
+  .btn:hover { filter:brightness(1.1); }
+
+  .list { margin-top:14px; display:flex; flex-direction:column; gap:6px; }
+  .row {
+    display:flex; justify-content:space-between; align-items:center; gap:10px;
+    padding:10px 12px; background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm);
+  }
+  .row .lbl { font-size:13.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .lbl .time { color:var(--muted); font-size:11px; margin-right:6px; }
+  .row .amt { font-weight:700; font-size:14px; white-space:nowrap; }
+  .row.vente .amt { color:var(--ok); }
+  .row.depense .amt { color:var(--ko); }
+  .row .del {
+    background:none; border:none; color:var(--muted); cursor:pointer; font-size:16px;
+    width:26px; height:26px; border-radius:6px; flex-shrink:0; line-height:1;
+  }
+  .row .del:hover { background:rgba(224,84,84,.15); color:var(--ko); }
+  .empty { color:var(--muted); font-size:13px; text-align:center; padding:14px 0; }
+
+  .hist { margin-top:6px; }
+  .hist .hrow {
+    display:flex; justify-content:space-between; align-items:center; padding:8px 0;
+    border-bottom:1px solid var(--line); font-size:13px; cursor:pointer;
+  }
+  .hist .hrow:last-child { border-bottom:none; }
+  .hist .hrow:hover .hd { color:var(--accent-soft); }
+  .hist .hd { color:var(--text); }
+  .hist .hn { font-weight:700; }
+  .hist .hn.pos { color:var(--ok); } .hist .hn.neg { color:var(--ko); }
+
+  .foot-actions { display:flex; gap:8px; margin-top:18px; }
+  .foot-actions .btn2 {
+    flex:1; background:var(--surface-2); border:1px solid var(--line-2); color:var(--text);
+    padding:11px; border-radius:var(--radius-sm); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;
+  }
+  .foot-actions .btn2:hover { background:var(--surface-3); }
+  .warn-note {
+    font-size:11.5px; color:var(--muted); text-align:center; margin-top:16px; padding:0 10px; line-height:1.5;
+  }
+
+  #toast {
+    position:fixed; left:50%; bottom:20px; transform:translateX(-50%) translateY(20px);
+    background:var(--surface-2); color:var(--text); border:1px solid var(--line-2); border-left:3px solid var(--accent);
+    padding:11px 16px; border-radius:var(--radius-sm); font-weight:600; font-size:13px; max-width:88vw; z-index:300;
+    opacity:0; pointer-events:none; transition:all .25s cubic-bezier(.22,.61,.36,1);
+  }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  #toast.ko { border-left-color:var(--ko); }
+
+  @media (min-width:480px) {
+    .form-row input[type=text] { flex:3; }
+  }
+</style>
+</head><body>
+<div id="toast"></div>
+
+<main>
+  <div class="top">
+    <span class="badge">Carnet provisoire</span>
+    <h1>Suivi du jour</h1>
+    <div class="sub">Notes locales, en attendant le système — <b>rien n'est envoyé en ligne</b>.</div>
+  </div>
+
+  <div class="datebar">
+    <button class="navbtn" id="prevDay">‹</button>
+    <input type="date" id="dateSel">
+    <button class="navbtn" id="nextDay">›</button>
+  </div>
+  <div style="text-align:right;margin:-10px 0 16px"><span class="today-link" id="gotoToday">Revenir à aujourd'hui</span></div>
+
+  <div class="summary">
+    <div class="scard ventes"><div class="sv" id="sVentes">0</div><div class="sl">Ventes</div></div>
+    <div class="scard depenses"><div class="sv" id="sDepenses">0</div><div class="sl">Dépenses</div></div>
+    <div class="scard net"><div class="sv" id="sNet">0</div><div class="sl">Net</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Ajouter une vente</h2>
+    <div class="form-row">
+      <input type="text" id="vLabel" placeholder="ex : 2 chicha table 4">
+      <input type="number" id="vMontant" placeholder="GNF" min="0" inputmode="numeric">
+      <button class="btn btn-vente" id="addVente">+</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Ajouter une dépense</h2>
+    <div class="form-row">
+      <input type="text" id="dLabel" placeholder="ex : charbon, glace…">
+      <input type="number" id="dMontant" placeholder="GNF" min="0" inputmode="numeric">
+      <button class="btn btn-depense" id="addDepense">+</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Détail du jour</h2>
+    <div class="list" id="list"></div>
+  </div>
+
+  <div class="card">
+    <h2>Historique (7 derniers jours notés)</h2>
+    <div class="hist" id="hist"></div>
+  </div>
+
+  <div class="foot-actions">
+    <button class="btn2" id="exportBtn">Exporter en CSV</button>
+    <button class="btn2" id="clearBtn">Effacer ce jour</button>
+  </div>
+
+  <div class="warn-note">
+    Ces données restent uniquement sur cet appareil et ce navigateur. Pense à faire l'export CSV régulièrement,
+    et à ressaisir l'essentiel dans le vrai système une fois prêt.
+  </div>
+</main>
+
+<script>
+  const STORE_KEY = "ml_carnet_v1";
+  const $ = id => document.getElementById(id);
+
+  function todayISO(){
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+  function gnf(n){
+    const v = Math.round(Number(n)||0);
+    return v.toLocaleString("fr-FR").replace(/\s/g," ") + " GNF";
+  }
+  function frDate(iso){
+    return new Date(iso+"T00:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"});
+  }
+  function fmtTime(ts){
+    return new Date(ts).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+  }
+  function escHtml(s){
+    return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+  }
+
+  let _toastTimer;
+  function toast(msg, type=""){
+    const el = $("toast");
+    el.textContent = msg;
+    el.className = "show" + (type?" "+type:"");
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(()=>{ el.className=""; }, 2400);
+  }
+
+  function loadAll(){
+    try { return JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); }
+    catch { return []; }
+  }
+  function saveAll(entries){
+    localStorage.setItem(STORE_KEY, JSON.stringify(entries));
+  }
+
+  let entries = loadAll();
+  let curDate = todayISO();
+
+  function entriesForDate(d){
+    return entries.filter(e => e.date === d).sort((a,b)=> a.ts - b.ts);
+  }
+
+  function render(){
+    $("dateSel").value = curDate;
+    $("gotoToday").style.display = curDate === todayISO() ? "none" : "inline";
+
+    const rows = entriesForDate(curDate);
+    const ventes = rows.filter(e=>e.type==="vente").reduce((a,e)=>a+e.montant,0);
+    const depenses = rows.filter(e=>e.type==="depense").reduce((a,e)=>a+e.montant,0);
+    const net = ventes - depenses;
+
+    $("sVentes").textContent = gnf(ventes);
+    $("sDepenses").textContent = gnf(depenses);
+    $("sNet").textContent = gnf(net);
+    $("sNet").style.color = net < 0 ? "var(--ko)" : "var(--gold)";
+
+    const list = $("list");
+    if (!rows.length){
+      list.innerHTML = `<div class="empty">Rien noté pour le ${escHtml(frDate(curDate))}.</div>`;
+    } else {
+      list.innerHTML = rows.map(e => `
+        <div class="row ${e.type}" data-id="${e.id}">
+          <div class="lbl"><span class="time">${fmtTime(e.ts)}</span>${escHtml(e.label || (e.type==="vente"?"Vente":"Dépense"))}</div>
+          <div class="amt">${e.type==="vente"?"+":"−"}${gnf(e.montant)}</div>
+          <button class="del" data-id="${e.id}">✕</button>
+        </div>`).join("");
+    }
+
+    renderHist();
+  }
+
+  function renderHist(){
+    const dates = [...new Set(entries.map(e=>e.date))].sort((a,b)=>b.localeCompare(a)).slice(0,7);
+    const el = $("hist");
+    if (!dates.length){ el.innerHTML = `<div class="empty">Aucun historique pour l'instant.</div>`; return; }
+    el.innerHTML = dates.map(d => {
+      const rows = entriesForDate(d);
+      const v = rows.filter(e=>e.type==="vente").reduce((a,e)=>a+e.montant,0);
+      const dep = rows.filter(e=>e.type==="depense").reduce((a,e)=>a+e.montant,0);
+      const n = v - dep;
+      return `<div class="hrow" data-date="${d}">
+        <span class="hd">${escHtml(frDate(d))}</span>
+        <span class="hn ${n<0?"neg":"pos"}">${gnf(n)}</span>
+      </div>`;
+    }).join("");
+  }
+
+  function addEntry(type, label, montant){
+    if (!(montant > 0)) { toast("Montant invalide", "ko"); return false; }
+    entries.push({ id: crypto.randomUUID(), date: curDate, type, label: label.trim(), montant: Math.round(montant), ts: Date.now() });
+    saveAll(entries);
+    render();
+    return true;
+  }
+
+  $("addVente").addEventListener("click", () => {
+    if (addEntry("vente", $("vLabel").value, Number($("vMontant").value))){
+      $("vLabel").value = ""; $("vMontant").value = ""; $("vLabel").focus();
+      toast("Vente ajoutée", "ok");
+    }
+  });
+  $("addDepense").addEventListener("click", () => {
+    if (addEntry("depense", $("dLabel").value, Number($("dMontant").value))){
+      $("dLabel").value = ""; $("dMontant").value = ""; $("dLabel").focus();
+      toast("Dépense ajoutée", "ok");
+    }
+  });
+  [$("vMontant"), $("dMontant")].forEach(el => el.addEventListener("keydown", ev => {
+    if (ev.key === "Enter") ev.target.closest(".form-row").querySelector(".btn").click();
+  }));
+
+  $("list").addEventListener("click", ev => {
+    const btn = ev.target.closest(".del"); if (!btn) return;
+    entries = entries.filter(e => e.id !== btn.dataset.id);
+    saveAll(entries);
+    render();
+    toast("Supprimé", "ok");
+  });
+
+  $("hist").addEventListener("click", ev => {
+    const row = ev.target.closest(".hrow"); if (!row) return;
+    curDate = row.dataset.date;
+    render();
+  });
+
+  $("dateSel").addEventListener("change", () => { curDate = $("dateSel").value || todayISO(); render(); });
+  $("prevDay").addEventListener("click", () => {
+    const d = new Date(curDate+"T00:00:00"); d.setDate(d.getDate()-1);
+    curDate = d.toISOString().slice(0,10); render();
+  });
+  $("nextDay").addEventListener("click", () => {
+    const d = new Date(curDate+"T00:00:00"); d.setDate(d.getDate()+1);
+    curDate = d.toISOString().slice(0,10); render();
+  });
+  $("gotoToday").addEventListener("click", () => { curDate = todayISO(); render(); });
+
+  $("clearBtn").addEventListener("click", () => {
+    const rows = entriesForDate(curDate);
+    if (!rows.length) { toast("Rien à effacer"); return; }
+    if (!confirm(`Effacer les ${rows.length} entrée(s) du ${frDate(curDate)} ?`)) return;
+    entries = entries.filter(e => e.date !== curDate);
+    saveAll(entries);
+    render();
+    toast("Journée effacée", "ok");
+  });
+
+  $("exportBtn").addEventListener("click", () => {
+    if (!entries.length) { toast("Rien à exporter"); return; }
+    const header = ["Date","Heure","Type","Libellé","Montant (GNF)"];
+    const sorted = [...entries].sort((a,b)=> a.date.localeCompare(b.date) || a.ts-b.ts);
+    const lines = sorted.map(e => [
+      e.date, fmtTime(e.ts), e.type==="vente"?"Vente":"Dépense", e.label||"", e.montant,
+    ]);
+    const csv = [header, ...lines].map(l => l.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
+    const blob = new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "carnet_medellin_" + todayISO() + ".csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("Export généré", "ok");
+  });
+
+  render();
+</script>
+</body></html>

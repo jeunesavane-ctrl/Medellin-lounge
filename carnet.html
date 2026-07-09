@@ -214,7 +214,7 @@
 <script src="shared.js"></script>
 <script>
   document.body.insertAdjacentHTML("afterbegin", HEADER_HTML);
-  if (!initPage(["manager", "owner"])) throw new Error("non autorisé");
+  if (!initPage(["owner"])) throw new Error("non autorisé");
 
   const meName = ML.getExtra().nom || ML.getRole();
   const CAT_LBL = { chicha:"Chicha", boissons:"Boissons", autre:"Autre",

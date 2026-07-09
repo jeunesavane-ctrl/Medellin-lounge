@@ -190,7 +190,7 @@ const NAV = [
   { href: "bilan.html",      label: "Bilan",           icon: "ti-report-money",     roles: ["owner", "manager", "associe"] },
   { href: "associes.html",   label: "Associés",        icon: "ti-users-group",      roles: ["owner", "associe"] },
   { href: "historique.html", label: "Historique",      icon: "ti-history",          roles: ["manager", "owner"] },
-  { href: "carnet.html",     label: "Carnet",          icon: "ti-notebook",         roles: ["manager", "owner"] },
+  { href: "carnet.html",     label: "Carnet",          icon: "ti-notebook",         roles: ["owner"] },
   { href: "fiche.html",      label: "Ma fiche",        icon: "ti-id-badge-2",       roles: ["staff", "caissier", "chicha", "achats", "manager"] },
   { href: "avance.html",     label: "Demande avance",  icon: "ti-cash-banknote",    roles: ["staff", "caissier", "chicha", "achats", "manager"] },
   { href: "parametres.html", label: "Paramètres",      icon: "ti-settings",         roles: ["owner"] },

@@ -195,6 +195,7 @@
       <span class="muted" id="dayCount" style="font-size:12px"></span>
     </div>
     <div class="list mt" id="list">Chargement…</div>
+    <button class="btn btn-ghost btn-sm mt" id="clearDayBtn" style="width:auto;color:var(--ko);border-color:rgba(224,84,84,.3)">Effacer cette journée</button>
   </div>
 
   <!-- Récap du mois -->
@@ -429,6 +430,27 @@
     st.entries = st.entries.filter(e => e.id !== btn.dataset.id);
     render();
     toast("Supprimé","ok");
+  });
+
+  $("clearDayBtn").addEventListener("click", async () => {
+    const rows = dayEntries(st.curDate);
+    const hasJour = !!st.jour && (st.jour.fond_caisse || st.jour.note);
+    if (!rows.length && !hasJour){ toast("Rien à effacer pour ce jour"); return; }
+    if (!confirm(`Effacer toute la journée du ${frDate(st.curDate)} ?\n\n${rows.length} entrée(s), plus le fond de caisse et la note si présents. Irréversible.`)) return;
+    try {
+      if (rows.length){
+        const { error } = await db.from("carnet_entrees").delete().eq("date", st.curDate);
+        if (error) throw error;
+      }
+      if (hasJour){
+        const { error } = await db.from("carnet_jours").delete().eq("date", st.curDate);
+        if (error) throw error;
+      }
+      st.entries = st.entries.filter(e => e.date !== st.curDate);
+      st.jour = null;
+      render();
+      toast("Journée effacée","ok");
+    } catch(e) { console.error(e); toast("Erreur","ko"); }
   });
 
   /* ── Navigation date ───────────────────────────────────────── */

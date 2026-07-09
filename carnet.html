@@ -7,7 +7,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23160e0b'/><rect x='.5' y='.5' width='63' height='63' rx='13.5' fill='none' stroke='%23c96e48' stroke-opacity='.4'/><text x='32' y='41' font-family='Arial,Helvetica,sans-serif' font-size='23' font-weight='800' fill='%23e89872' text-anchor='middle'>ML</text></svg>">
 <link rel="stylesheet" href="shared.css">
 <style>
-  .datebar { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+  /* ── Barre de date ─────────────────────────────────────────── */
+  .datebar { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
   .datebar input[type=date] { flex:1; margin:0; }
   .navbtn {
     background:var(--surface-2); border:1px solid var(--line-2); color:var(--text);
@@ -17,29 +18,63 @@
   .navbtn:active { transform:scale(.94); }
   .today-link { font-size:12px; color:var(--blue-soft); text-decoration:underline; cursor:pointer; }
 
-  .summary { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
-  .scard { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 10px; text-align:center; }
-  .scard .sv { font-size:15px; font-weight:700; letter-spacing:-.2px; }
+  /* ── Tuiles résumé ─────────────────────────────────────────── */
+  .summary { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:12px 0 8px; }
+  .scard { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm); padding:11px 8px; text-align:center; }
+  .scard .sv { font-size:14px; font-weight:700; letter-spacing:-.2px; }
   .scard .sl { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-top:3px; }
-  .scard.net .sv { color:var(--gold); font-size:16px; }
+  .scard.net .sv { color:var(--gold); font-size:15px; }
   .scard.ventes .sv { color:var(--ok); }
   .scard.depenses .sv { color:var(--ko); }
+  .scard.credit .sv { color:var(--warn); }
+  .caisse-tile {
+    display:flex; justify-content:space-between; align-items:center; gap:10px;
+    background:var(--blue-dim); border:1px solid rgba(201,110,72,.25); border-radius:var(--radius-sm);
+    padding:12px 16px; margin-bottom:14px;
+  }
+  .caisse-tile .ct-lbl { font-size:11px; color:var(--blue-soft); text-transform:uppercase; letter-spacing:.7px; }
+  .caisse-tile .ct-sub { font-size:11px; color:var(--muted); margin-top:2px; }
+  .caisse-tile .ct-val { font-size:18px; font-weight:800; color:var(--blue-soft); white-space:nowrap; }
 
-  .form-row { display:flex; gap:8px; }
+  /* ── Chips (catégorie / paiement) ──────────────────────────── */
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .chip {
+    padding:7px 13px; border-radius:999px; border:1px solid var(--line-2); background:var(--surface-2);
+    color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer; user-select:none;
+    transition:all .12s;
+  }
+  .chip.sel { border-color:var(--blue); color:var(--blue-soft); background:var(--blue-dim); }
+  .chip:active { transform:scale(.95); }
+
+  /* ── Formulaires ───────────────────────────────────────────── */
+  .form-row { display:flex; gap:8px; margin-bottom:10px; }
   .form-row input[type=text] { flex:2; min-width:0; margin:0; }
   .form-row input[type=number] { flex:1; min-width:0; margin:0; }
-  .form-row .btn { width:auto; padding:0 18px; flex-shrink:0; }
   .btn-vente { background:var(--ok); color:#082e15; }
   .btn-depense { background:var(--ko); color:#3a0d0d; }
 
-  .list { margin-top:14px; display:flex; flex-direction:column; gap:6px; }
+  .fond-row { display:flex; gap:8px; }
+  .fond-row input { margin:0; }
+  .fond-row .btn { width:auto; flex-shrink:0; }
+
+  /* ── Détail du jour ────────────────────────────────────────── */
+  .list { display:flex; flex-direction:column; gap:6px; }
   .erow {
     display:flex; justify-content:space-between; align-items:center; gap:10px;
     padding:10px 12px; background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm);
   }
-  .erow .lbl { font-size:13.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .erow .lbl { font-size:13.5px; min-width:0; }
+  .erow .lbl .lmain { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .erow .lbl .time { color:var(--muted); font-size:11px; margin-right:6px; }
-  .erow .lbl .who { color:var(--muted); font-size:11px; margin-left:6px; }
+  .erow .meta2 { display:flex; gap:5px; flex-wrap:wrap; margin-top:3px; }
+  .mini-tag {
+    font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
+    padding:1.5px 7px; border-radius:4px; background:var(--surface-3); color:var(--muted);
+    border:1px solid var(--line-2);
+  }
+  .mini-tag.pay-especes { color:var(--ok); border-color:rgba(78,207,128,.3); }
+  .mini-tag.pay-om { color:var(--blue-soft); border-color:rgba(201,110,72,.3); }
+  .mini-tag.pay-credit { color:var(--warn); border-color:rgba(232,180,74,.35); }
   .erow .amt { font-weight:700; font-size:14px; white-space:nowrap; flex-shrink:0; }
   .erow.vente .amt { color:var(--ok); }
   .erow.depense .amt { color:var(--ko); }
@@ -49,15 +84,22 @@
   }
   .erow .del:hover { background:rgba(224,84,84,.15); color:var(--ko); }
 
-  .hist .hrow {
-    display:flex; justify-content:space-between; align-items:center; padding:8px 0;
+  /* ── Récap du mois ─────────────────────────────────────────── */
+  .mrow { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); font-size:13.5px; }
+  .mrow:last-child { border-bottom:none; }
+  .mrow.tot { font-size:15px; } .mrow.tot b { color:var(--gold); }
+  .mrow .neg { color:var(--ko); } .mrow .pos { color:var(--ok); }
+  .mdays .hrow {
+    display:flex; justify-content:space-between; align-items:center; padding:7px 0;
     border-bottom:1px solid var(--line); font-size:13px; cursor:pointer;
   }
-  .hist .hrow:last-child { border-bottom:none; }
-  .hist .hrow:hover .hd { color:var(--blue-soft); }
-  .hist .hn.pos { color:var(--ok); } .hist .hn.neg { color:var(--ko); }
+  .mdays .hrow:last-child { border-bottom:none; }
+  .mdays .hrow:hover .hd { color:var(--blue-soft); }
+  .mdays .hrow.cur .hd { color:var(--blue-soft); font-weight:700; }
+  .mdays .hn { font-weight:700; }
+  .mdays .hn.pos { color:var(--ok); } .mdays .hn.neg { color:var(--ko); }
 
-  .foot-actions { display:flex; gap:8px; margin-top:4px; }
+  .foot-actions { display:flex; gap:8px; }
   .foot-actions .btn { width:auto; flex:1; }
 </style>
 </head><body>
@@ -66,55 +108,105 @@
 <main>
   <div class="hero">
     <h1>Carnet</h1>
-    <div class="hsub">Notes rapides ventes / dépenses — visible par toute l'équipe, en direct.</div>
+    <div class="hsub">Journal de gestion — partagé avec l'équipe, en direct.</div>
   </div>
 
+  <!-- Date -->
   <div class="datebar">
     <button class="navbtn" id="prevDay">‹</button>
     <input type="date" id="dateSel">
     <button class="navbtn" id="nextDay">›</button>
   </div>
-  <div class="row between mb">
-    <span></span>
-    <span class="today-link" id="gotoToday" style="display:none">Revenir à aujourd'hui</span>
+  <div class="row between mb" style="min-height:18px">
+    <span class="muted" style="font-size:12px" id="dayLbl"></span>
+    <span class="today-link" id="gotoToday" style="display:none">Aujourd'hui</span>
   </div>
 
+  <!-- Résumé du jour -->
   <div class="summary">
     <div class="scard ventes"><div class="sv" id="sVentes">—</div><div class="sl">Ventes</div></div>
     <div class="scard depenses"><div class="sv" id="sDepenses">—</div><div class="sl">Dépenses</div></div>
     <div class="scard net"><div class="sv" id="sNet">—</div><div class="sl">Net</div></div>
   </div>
-
-  <div class="card">
-    <h2 style="margin-top:0">Ajouter une vente</h2>
-    <div class="form-row">
-      <input type="text" id="vLabel" placeholder="ex : 2 chicha table 4">
-      <input type="number" id="vMontant" placeholder="GNF" min="0" inputmode="numeric">
-      <button class="btn btn-vente" id="addVente">+</button>
+  <div class="summary" style="margin-top:0">
+    <div class="scard"><div class="sv" style="color:var(--ok)" id="sEsp">—</div><div class="sl">Espèces</div></div>
+    <div class="scard"><div class="sv" style="color:var(--blue-soft)" id="sOm">—</div><div class="sl">Orange Money</div></div>
+    <div class="scard credit"><div class="sv" id="sCredit">—</div><div class="sl">Crédit (dû)</div></div>
+  </div>
+  <div class="caisse-tile">
+    <div>
+      <div class="ct-lbl">En caisse (théorique)</div>
+      <div class="ct-sub" id="caisseDetail">fond + espèces − dépenses</div>
     </div>
+    <div class="ct-val" id="sCaisse">—</div>
   </div>
 
+  <!-- Fond & note du jour -->
+  <div class="card">
+    <h2 style="margin-top:0">Fond de caisse &amp; note du jour</h2>
+    <div class="fond-row mb">
+      <input type="number" id="fondInput" placeholder="Fond de caisse (GNF)" min="0" inputmode="numeric">
+      <button class="btn btn-sm" id="saveFond">OK</button>
+    </div>
+    <textarea id="noteInput" rows="2" placeholder="Note du jour (optionnel) — ex : soirée foot, coupure courant 2h…"></textarea>
+    <button class="btn btn-ghost btn-sm" id="saveNote" style="width:auto">Enregistrer la note</button>
+  </div>
+
+  <!-- Vente -->
+  <div class="card">
+    <h2 style="margin-top:0">Ajouter une vente</h2>
+    <div class="chips" id="vCats">
+      <span class="chip sel" data-v="chicha">Chicha</span>
+      <span class="chip" data-v="boissons">Boissons</span>
+      <span class="chip" data-v="autre">Autre</span>
+    </div>
+    <div class="form-row">
+      <input type="text" id="vLabel" placeholder="ex : 2 Love table 4">
+      <input type="number" id="vMontant" placeholder="GNF" min="0" inputmode="numeric">
+    </div>
+    <div class="chips" id="vPays">
+      <span class="chip sel" data-v="especes">Espèces</span>
+      <span class="chip" data-v="om">Orange Money</span>
+      <span class="chip" data-v="credit">Crédit</span>
+    </div>
+    <button class="btn btn-vente" id="addVente">+ Ajouter la vente</button>
+  </div>
+
+  <!-- Dépense -->
   <div class="card">
     <h2 style="margin-top:0">Ajouter une dépense</h2>
+    <div class="chips" id="dCats">
+      <span class="chip sel" data-v="achats">Achats</span>
+      <span class="chip" data-v="salaire">Salaire</span>
+      <span class="chip" data-v="charge">Charge</span>
+      <span class="chip" data-v="divers">Divers</span>
+    </div>
     <div class="form-row">
       <input type="text" id="dLabel" placeholder="ex : charbon, glace…">
       <input type="number" id="dMontant" placeholder="GNF" min="0" inputmode="numeric">
-      <button class="btn btn-depense" id="addDepense">+</button>
     </div>
+    <button class="btn btn-depense" id="addDepense">− Ajouter la dépense</button>
   </div>
 
+  <!-- Détail -->
   <div class="card">
-    <h2 style="margin-top:0">Détail du jour</h2>
-    <div class="list" id="list">Chargement…</div>
+    <div class="row between">
+      <h2 style="margin:0">Détail du jour</h2>
+      <span class="muted" id="dayCount" style="font-size:12px"></span>
+    </div>
+    <div class="list mt" id="list">Chargement…</div>
   </div>
 
+  <!-- Récap du mois -->
   <div class="card">
-    <h2 style="margin-top:0">Historique (7 derniers jours notés)</h2>
-    <div class="hist" id="hist">Chargement…</div>
+    <h2 style="margin-top:0" id="moisTitle">Récap du mois</h2>
+    <div id="moisTotaux"></div>
+    <h3>Jour par jour</h3>
+    <div class="mdays" id="moisJours"></div>
   </div>
 
   <div class="foot-actions">
-    <button class="btn btn-ghost" id="exportBtn">Exporter en CSV</button>
+    <button class="btn btn-ghost" id="exportBtn">Exporter le mois en CSV</button>
   </div>
 </main>
 
@@ -125,147 +217,265 @@
   if (!initPage(["manager", "owner"])) throw new Error("non autorisé");
 
   const meName = ML.getExtra().nom || ML.getRole();
-  let entries = [];
-  let curDate = todayISO();
-  let sub = null;
+  const CAT_LBL = { chicha:"Chicha", boissons:"Boissons", autre:"Autre",
+                    achats:"Achats", salaire:"Salaire", charge:"Charge", divers:"Divers" };
+  const PAY_LBL = { especes:"Esp", om:"OM", credit:"Crédit" };
 
+  const st = {
+    entries: [],        // entrées du mois affiché
+    jour: null,         // { fond_caisse, note } du jour affiché
+    curDate: todayISO(),
+    curMonth: null,     // "YYYY-MM" chargé
+    sub: null, ok: true,
+  };
+
+  function monthOf(d){ return d.slice(0,7); }
+  function monthBounds(ym){
+    const [y,m] = ym.split("-").map(Number);
+    const nm = m===12 ? `${y+1}-01` : `${y}-${String(m+1).padStart(2,"0")}`;
+    return { start: `${ym}-01`, end: `${nm}-01` };
+  }
   function fmtTime(ts){ return new Date(ts).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}); }
+  const sum = rows => rows.reduce((a,e)=>a+(e.montant||0),0);
 
-  // Requête isolée : si la table carnet_entrees n'existe pas encore (migration
-  // pas passée), la page reste utilisable sans planter — juste vide.
-  async function loadAll(){
+  /* ── Chargement (requêtes isolées : la page survit sans la migration) ── */
+  async function loadMonth(){
+    const ym = monthOf(st.curDate);
+    const { start, end } = monthBounds(ym);
     try {
-      const since = new Date(); since.setDate(since.getDate()-30);
       const { data, error } = await db.from("carnet_entrees").select("*")
-        .gte("date", since.toISOString().slice(0,10)).order("created_at");
+        .gte("date", start).lt("date", end).order("created_at");
       if (error) throw error;
-      entries = data || [];
-    } catch(e) { console.error("carnet_entrees:", e); entries = []; toast("Migration carnet pas encore appliquée (Supabase)","ko"); }
+      st.entries = data || []; st.curMonth = ym; st.ok = true;
+    } catch(e) {
+      st.entries = []; st.ok = false;
+      toast("Migration carnet pas encore appliquée (Supabase)","ko");
+    }
+  }
+  async function loadJour(){
+    st.jour = null;
+    try {
+      const { data } = await db.from("carnet_jours").select("*").eq("date", st.curDate).maybeSingle();
+      st.jour = data || null;
+    } catch(e) { /* table absente */ }
+  }
+  async function refresh(){
+    if (monthOf(st.curDate) !== st.curMonth) await loadMonth();
+    await loadJour();
     render();
   }
 
-  function entriesForDate(d){ return entries.filter(e => e.date === d); }
+  /* ── Rendu ─────────────────────────────────────────────────── */
+  function dayEntries(d){ return st.entries.filter(e => e.date === d); }
 
   function render(){
-    $("dateSel").value = curDate;
-    $("gotoToday").style.display = curDate === todayISO() ? "none" : "inline";
+    $("dateSel").value = st.curDate;
+    $("dayLbl").textContent = frDate(st.curDate);
+    $("gotoToday").style.display = st.curDate === todayISO() ? "none" : "inline";
 
-    const rows = entriesForDate(curDate);
-    const ventes = rows.filter(e=>e.type==="vente").reduce((a,e)=>a+e.montant,0);
-    const depenses = rows.filter(e=>e.type==="depense").reduce((a,e)=>a+e.montant,0);
-    const net = ventes - depenses;
+    const rows = dayEntries(st.curDate);
+    const ventes = rows.filter(e=>e.type==="vente");
+    const deps   = rows.filter(e=>e.type==="depense");
+    const vTot = sum(ventes), dTot = sum(deps);
+    const esp = sum(ventes.filter(e=>e.paiement==="especes"));
+    const om  = sum(ventes.filter(e=>e.paiement==="om"));
+    const cred= sum(ventes.filter(e=>e.paiement==="credit"));
+    const fond = st.jour?.fond_caisse || 0;
+    const caisse = fond + esp - dTot;
 
-    $("sVentes").textContent = gnf(ventes);
-    $("sDepenses").textContent = gnf(depenses);
-    $("sNet").textContent = gnf(net);
-    $("sNet").style.color = net < 0 ? "var(--ko)" : "var(--gold)";
+    $("sVentes").textContent = gnf(vTot);
+    $("sDepenses").textContent = gnf(dTot);
+    $("sNet").textContent = gnf(vTot - dTot);
+    $("sNet").style.color = (vTot-dTot) < 0 ? "var(--ko)" : "var(--gold)";
+    $("sEsp").textContent = gnf(esp);
+    $("sOm").textContent = gnf(om);
+    $("sCredit").textContent = gnf(cred);
+    $("sCaisse").textContent = gnf(caisse);
+    $("caisseDetail").textContent = `fond ${gnf(fond)} + espèces ${gnf(esp)} − dépenses ${gnf(dTot)}`;
 
+    $("fondInput").value = st.jour?.fond_caisse ?? "";
+    $("noteInput").value = st.jour?.note || "";
+
+    // Détail
+    $("dayCount").textContent = rows.length ? rows.length + " entrée" + (rows.length>1?"s":"") : "";
     const list = $("list");
     if (!rows.length){
-      list.innerHTML = `<p class="muted">Rien noté pour le ${escHtml(frDate(curDate))}.</p>`;
+      list.innerHTML = `<p class="muted">Rien noté pour ce jour.</p>`;
     } else {
       list.innerHTML = rows.map(e => `
         <div class="erow ${e.type}" data-id="${escHtml(e.id)}">
-          <div class="lbl"><span class="time">${fmtTime(e.created_at)}</span>${escHtml(e.label || (e.type==="vente"?"Vente":"Dépense"))}<span class="who">${escHtml(e.cree_par||"")}</span></div>
+          <div class="lbl">
+            <div class="lmain"><span class="time">${fmtTime(e.created_at)}</span>${escHtml(e.label || CAT_LBL[e.categorie] || (e.type==="vente"?"Vente":"Dépense"))}</div>
+            <div class="meta2">
+              ${e.categorie ? `<span class="mini-tag">${escHtml(CAT_LBL[e.categorie]||e.categorie)}</span>` : ""}
+              ${e.type==="vente" && e.paiement ? `<span class="mini-tag pay-${escHtml(e.paiement)}">${escHtml(PAY_LBL[e.paiement]||e.paiement)}</span>` : ""}
+              ${e.cree_par ? `<span class="mini-tag">${escHtml(e.cree_par)}</span>` : ""}
+            </div>
+          </div>
           <div class="amt">${e.type==="vente"?"+":"−"}${gnf(e.montant)}</div>
           <button class="del" data-id="${escHtml(e.id)}">✕</button>
         </div>`).join("");
     }
-    renderHist();
+
+    renderMois();
   }
 
-  function renderHist(){
-    const dates = [...new Set(entries.map(e=>e.date))].sort((a,b)=>b.localeCompare(a)).slice(0,7);
-    const el = $("hist");
-    if (!dates.length){ el.innerHTML = `<p class="muted">Aucun historique pour l'instant.</p>`; return; }
+  function renderMois(){
+    const ym = monthOf(st.curDate);
+    $("moisTitle").textContent = "Récap — " + frMonth(ym + "-01");
+    const ventes = st.entries.filter(e=>e.type==="vente");
+    const deps   = st.entries.filter(e=>e.type==="depense");
+    const vTot = sum(ventes), dTot = sum(deps);
+
+    const catLine = (rows, cats) => cats
+      .map(c => ({ c, m: sum(rows.filter(e=>e.categorie===c)) }))
+      .filter(x => x.m > 0)
+      .map(x => `${CAT_LBL[x.c]} ${gnf(x.m)}`).join(" · ") || "—";
+
+    const credit = sum(ventes.filter(e=>e.paiement==="credit"));
+
+    $("moisTotaux").innerHTML = `
+      <div class="mrow"><span>Ventes <span class="muted" style="font-size:11px">${escHtml(catLine(ventes,["chicha","boissons","autre"]))}</span></span><b class="pos">${gnf(vTot)}</b></div>
+      <div class="mrow"><span>Dépenses <span class="muted" style="font-size:11px">${escHtml(catLine(deps,["achats","salaire","charge","divers"]))}</span></span><b class="neg">− ${gnf(dTot)}</b></div>
+      ${credit ? `<div class="mrow"><span style="color:var(--warn)">Dont crédits non encaissés</span><b style="color:var(--warn)">${gnf(credit)}</b></div>` : ""}
+      <div class="mrow tot"><span>Net du mois</span><b>${gnf(vTot - dTot)}</b></div>`;
+
+    const dates = [...new Set(st.entries.map(e=>e.date))].sort((a,b)=>b.localeCompare(a));
+    const el = $("moisJours");
+    if (!dates.length){ el.innerHTML = `<p class="muted">Aucune entrée ce mois.</p>`; return; }
     el.innerHTML = dates.map(d => {
-      const rows = entriesForDate(d);
-      const v = rows.filter(e=>e.type==="vente").reduce((a,e)=>a+e.montant,0);
-      const dep = rows.filter(e=>e.type==="depense").reduce((a,e)=>a+e.montant,0);
-      const n = v - dep;
-      return `<div class="hrow" data-date="${escHtml(d)}">
-        <span class="hd">${escHtml(frDate(d))}</span>
+      const rows = dayEntries(d);
+      const n = sum(rows.filter(e=>e.type==="vente")) - sum(rows.filter(e=>e.type==="depense"));
+      return `<div class="hrow${d===st.curDate?" cur":""}" data-date="${escHtml(d)}">
+        <span class="hd">${escHtml(frDateShort(d))}</span>
         <span class="hn ${n<0?"neg":"pos"}">${gnf(n)}</span>
       </div>`;
     }).join("");
   }
 
-  async function addEntry(type, label, montant){
-    if (!(montant > 0)) { toast("Montant invalide","ko"); return false; }
-    const rec = { date: curDate, type, label: label.trim()||null, montant: Math.round(montant), cree_par: meName };
+  /* ── Chips ─────────────────────────────────────────────────── */
+  function chipVal(boxId){ return document.querySelector(`#${boxId} .chip.sel`)?.dataset.v; }
+  ["vCats","vPays","dCats"].forEach(id => {
+    $(id).addEventListener("click", ev => {
+      const c = ev.target.closest(".chip"); if (!c) return;
+      $(id).querySelectorAll(".chip").forEach(x => x.classList.toggle("sel", x === c));
+    });
+  });
+
+  /* ── Ajouts ────────────────────────────────────────────────── */
+  async function addEntry(rec){
     const { data, error } = await db.from("carnet_entrees").insert(rec).select().single();
-    if (error){ toast(error.code==="PGRST205" ? "Migration carnet pas encore appliquée (Supabase)" : "Erreur","ko"); return false; }
-    entries.push(data);
+    if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v2) à appliquer dans Supabase" : "Erreur","ko"); return null; }
+    st.entries.push(data);
     render();
-    return true;
+    return data;
   }
 
   $("addVente").addEventListener("click", async () => {
-    if (await addEntry("vente", $("vLabel").value, Number($("vMontant").value))){
-      $("vLabel").value=""; $("vMontant").value=""; $("vLabel").focus();
-      toast("Vente ajoutée","ok");
-    }
+    const montant = Math.round(Number($("vMontant").value)||0);
+    if (!(montant > 0)){ toast("Montant invalide","ko"); return; }
+    const ok = await addEntry({
+      date: st.curDate, type:"vente", categorie: chipVal("vCats"),
+      label: $("vLabel").value.trim()||null, montant,
+      paiement: chipVal("vPays"), cree_par: meName,
+    });
+    if (ok){ $("vLabel").value=""; $("vMontant").value=""; $("vLabel").focus(); toast("Vente ajoutée","ok"); }
   });
+
   $("addDepense").addEventListener("click", async () => {
-    if (await addEntry("depense", $("dLabel").value, Number($("dMontant").value))){
-      $("dLabel").value=""; $("dMontant").value=""; $("dLabel").focus();
-      toast("Dépense ajoutée","ok");
-    }
+    const montant = Math.round(Number($("dMontant").value)||0);
+    if (!(montant > 0)){ toast("Montant invalide","ko"); return; }
+    const ok = await addEntry({
+      date: st.curDate, type:"depense", categorie: chipVal("dCats"),
+      label: $("dLabel").value.trim()||null, montant,
+      paiement: null, cree_par: meName,
+    });
+    if (ok){ $("dLabel").value=""; $("dMontant").value=""; $("dLabel").focus(); toast("Dépense ajoutée","ok"); }
   });
+
   [$("vMontant"), $("dMontant")].forEach(el => el.addEventListener("keydown", ev => {
-    if (ev.key === "Enter") ev.target.closest(".form-row").querySelector(".btn").click();
+    if (ev.key === "Enter") (el.id==="vMontant" ? $("addVente") : $("addDepense")).click();
   }));
 
-  $("list").addEventListener("click", async (ev) => {
+  /* ── Fond & note ───────────────────────────────────────────── */
+  async function saveJour(patch){
+    const rec = {
+      date: st.curDate,
+      fond_caisse: st.jour?.fond_caisse ?? 0,
+      note: st.jour?.note ?? null,
+      ...patch,
+      maj_par: meName, updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await db.from("carnet_jours").upsert(rec, { onConflict:"date" }).select().single();
+    if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v2) à appliquer dans Supabase" : "Erreur","ko"); return false; }
+    st.jour = data;
+    render();
+    return true;
+  }
+  $("saveFond").addEventListener("click", async () => {
+    const fond = Math.round(Number($("fondInput").value)||0);
+    if (await saveJour({ fond_caisse: fond })) toast("Fond enregistré","ok");
+  });
+  $("saveNote").addEventListener("click", async () => {
+    if (await saveJour({ note: $("noteInput").value.trim()||null })) toast("Note enregistrée","ok");
+  });
+
+  /* ── Suppression ───────────────────────────────────────────── */
+  $("list").addEventListener("click", async ev => {
     const btn = ev.target.closest(".del"); if (!btn) return;
-    const id = btn.dataset.id;
     if (!confirm("Supprimer cette entrée ?")) return;
-    const { error } = await db.from("carnet_entrees").delete().eq("id", id);
+    const { error } = await db.from("carnet_entrees").delete().eq("id", btn.dataset.id);
     if (error){ toast("Erreur","ko"); return; }
-    entries = entries.filter(e => e.id !== id);
+    st.entries = st.entries.filter(e => e.id !== btn.dataset.id);
     render();
     toast("Supprimé","ok");
   });
 
-  $("hist").addEventListener("click", ev => {
+  /* ── Navigation date ───────────────────────────────────────── */
+  $("moisJours").addEventListener("click", ev => {
     const row = ev.target.closest(".hrow"); if (!row) return;
-    curDate = row.dataset.date; render();
+    st.curDate = row.dataset.date; refresh();
   });
-  $("dateSel").addEventListener("change", () => { curDate = $("dateSel").value || todayISO(); render(); });
+  $("dateSel").addEventListener("change", () => { st.curDate = $("dateSel").value || todayISO(); refresh(); });
   $("prevDay").addEventListener("click", () => {
-    const d = new Date(curDate+"T00:00:00"); d.setDate(d.getDate()-1);
-    curDate = d.toISOString().slice(0,10); render();
+    const d = new Date(st.curDate+"T00:00:00"); d.setDate(d.getDate()-1);
+    st.curDate = d.toISOString().slice(0,10); refresh();
   });
   $("nextDay").addEventListener("click", () => {
-    const d = new Date(curDate+"T00:00:00"); d.setDate(d.getDate()+1);
-    curDate = d.toISOString().slice(0,10); render();
+    const d = new Date(st.curDate+"T00:00:00"); d.setDate(d.getDate()+1);
+    st.curDate = d.toISOString().slice(0,10); refresh();
   });
-  $("gotoToday").addEventListener("click", () => { curDate = todayISO(); render(); });
+  $("gotoToday").addEventListener("click", () => { st.curDate = todayISO(); refresh(); });
 
+  /* ── Export CSV (mois affiché) ─────────────────────────────── */
   $("exportBtn").addEventListener("click", () => {
-    if (!entries.length) { toast("Rien à exporter"); return; }
-    const header = ["Date","Heure","Type","Libellé","Montant (GNF)","Ajouté par"];
-    const sorted = [...entries].sort((a,b)=> a.date.localeCompare(b.date) || new Date(a.created_at)-new Date(b.created_at));
+    if (!st.entries.length){ toast("Rien à exporter ce mois"); return; }
+    const header = ["Date","Heure","Type","Catégorie","Libellé","Montant (GNF)","Paiement","Ajouté par"];
+    const sorted = [...st.entries].sort((a,b)=> a.date.localeCompare(b.date) || new Date(a.created_at)-new Date(b.created_at));
     const lines = sorted.map(e => [
-      e.date, fmtTime(e.created_at), e.type==="vente"?"Vente":"Dépense", e.label||"", e.montant, e.cree_par||"",
+      e.date, fmtTime(e.created_at), e.type==="vente"?"Vente":"Dépense",
+      CAT_LBL[e.categorie]||e.categorie||"", e.label||"", e.montant,
+      e.type==="vente" ? (PAY_LBL[e.paiement]||e.paiement||"") : "", e.cree_par||"",
     ]);
     const csv = [header, ...lines].map(l => l.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
     const blob = new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "carnet_medellin_" + todayISO() + ".csv";
+    a.download = "carnet_medellin_" + monthOf(st.curDate) + ".csv";
     a.click();
     URL.revokeObjectURL(a.href);
     toast("Export généré","ok");
   });
 
+  /* ── Temps réel ────────────────────────────────────────────── */
   function subscribe(){
-    sub = db.channel("carnet")
-      .on("postgres_changes",{event:"*",schema:"public",table:"carnet_entrees"}, async () => { await loadAll(); })
+    st.sub = db.channel("carnet")
+      .on("postgres_changes",{event:"*",schema:"public",table:"carnet_entrees"}, () => { st.curMonth = null; refresh(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"carnet_jours"}, () => { refresh(); })
       .subscribe();
   }
-  window.addEventListener("beforeunload", () => { if (sub) db.removeChannel(sub); });
+  window.addEventListener("beforeunload", () => { if (st.sub) db.removeChannel(st.sub); });
 
-  loadAll().then(subscribe);
+  refresh().then(subscribe);
 </script>
 </body></html>

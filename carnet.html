@@ -196,20 +196,25 @@
     <div class="list mt" id="stockMoisList">Chargement…</div>
   </div>
 
-  <!-- Produits & prix -->
+  <!-- Produits & prix (replié par défaut) -->
   <div class="card">
-    <h2 style="margin-top:0">Produits &amp; prix</h2>
-    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Sert au stock (ci-dessus). Propre au carnet, sans lien avec les prix du système.</p>
-    <div class="chips" id="pType">
-      <span class="chip sel" data-v="boisson">Boisson</span>
-      <span class="chip" data-v="chicha">Chicha</span>
+    <div class="row between">
+      <h2 style="margin:0">Produits &amp; prix</h2>
+      <button class="btn btn-ghost btn-sm" id="toggleProduits" style="width:auto">Gérer</button>
     </div>
-    <div class="form-row">
-      <input type="text" id="pNom" placeholder="ex : Sprite">
-      <input type="number" id="pPrix" placeholder="Prix GNF" min="0" inputmode="numeric">
-      <button class="btn" id="addProduit" style="width:auto;flex-shrink:0">+</button>
+    <div id="produitsPanel" style="display:none">
+      <p class="muted" style="font-size:12px;margin:10px 0 10px">Sert au stock (ci-dessus). Propre au carnet, sans lien avec les prix du système.</p>
+      <div class="chips" id="pType">
+        <span class="chip sel" data-v="boisson">Boisson</span>
+        <span class="chip" data-v="chicha">Chicha</span>
+      </div>
+      <div class="form-row">
+        <input type="text" id="pNom" placeholder="ex : Sprite">
+        <input type="number" id="pPrix" placeholder="Prix GNF" min="0" inputmode="numeric">
+        <button class="btn" id="addProduit" style="width:auto;flex-shrink:0">+</button>
+      </div>
+      <div class="list mt" id="produitsList">Chargement…</div>
     </div>
-    <div class="list mt" id="produitsList">Chargement…</div>
   </div>
 
   <!-- Récap du mois -->
@@ -506,6 +511,12 @@
     });
   });
   function chipVal(boxId){ return document.querySelector(`#${boxId} .chip.sel`)?.dataset.v; }
+
+  $("toggleProduits").addEventListener("click", () => {
+    const open = $("produitsPanel").style.display === "none";
+    $("produitsPanel").style.display = open ? "" : "none";
+    $("toggleProduits").textContent = open ? "Fermer" : "Gérer";
+  });
 
   /* ── Produits & prix ───────────────────────────────────────── */
   $("addProduit").addEventListener("click", async () => {

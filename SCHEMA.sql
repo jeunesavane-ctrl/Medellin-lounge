@@ -375,14 +375,13 @@ CREATE TABLE IF NOT EXISTS carnet_entrees (
 );
 ALTER TABLE carnet_entrees DISABLE ROW LEVEL SECURITY;
 
--- 25. carnet_jours (1 ligne par date) — total_chicha/total_boissons = ventes du
---     jour saisies en UN chiffre chacune (pas par transaction), + fond de caisse + note
---     chicha_qty = nombre de chichas vendus (total_chicha figé au prix du jour de saisie)
+-- 25. carnet_jours (1 ligne par date) — total_chicha/total_boissons calculés
+--     automatiquement depuis carnet_stock (jamais retapés à la main),
+--     + fond de caisse et note qui restent manuels
 CREATE TABLE IF NOT EXISTS carnet_jours (
   date           DATE PRIMARY KEY,
   total_chicha   INTEGER DEFAULT 0,
   total_boissons INTEGER DEFAULT 0,
-  chicha_qty     INTEGER DEFAULT 0,
   fond_caisse    INTEGER DEFAULT 0,
   note           TEXT,
   maj_par        TEXT,
@@ -390,7 +389,8 @@ CREATE TABLE IF NOT EXISTS carnet_jours (
 );
 ALTER TABLE carnet_jours DISABLE ROW LEVEL SECURITY;
 
--- 26. carnet_stock (comptage avant/après soirée par produit BOISSON ; écart = consommé)
+-- 26. carnet_stock (comptage avant/après soirée, chicha ET boissons — même
+--     mécanisme, un seul sélecteur de produit ; écart = vendu)
 CREATE TABLE IF NOT EXISTS carnet_stock (
   id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   date       DATE NOT NULL,

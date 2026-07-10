@@ -49,6 +49,10 @@
   .form-row input[type=number] { flex:1; min-width:0; margin:0; }
   .two-col { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .btn-depense { background:var(--ko); color:#3a0d0d; }
+  .stock-calc-row { display:flex; gap:14px; flex-wrap:wrap; background:var(--surface-2); border:1px solid var(--line-2);
+    border-radius:var(--radius-sm); padding:10px 14px; font-size:13px; color:var(--muted); }
+  .stock-calc-row b { color:var(--gold); font-size:14px; margin-left:4px; }
+  .mini-tag.type-chicha { color:var(--blue-soft); border-color:rgba(201,110,72,.3); }
 
   /* ── Listes (dépenses / stock) ────────────────────────────── */
   .list { display:flex; flex-direction:column; gap:6px; }
@@ -130,20 +134,12 @@
   <!-- Chiffres du jour -->
   <div class="card">
     <h2 style="margin-top:0">Chiffres du jour</h2>
-    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Le total de la soirée, pas vente par vente.</p>
-    <div class="two-col">
-      <div>
-        <label>Chichas vendus (nombre)</label>
-        <input type="number" id="chichaQty" min="0" inputmode="numeric">
-        <div class="muted" id="chichaCalc" style="font-size:11px;margin:-8px 0 12px">= 0 GNF</div>
-      </div>
-      <div>
-        <label>Total Boissons (GNF)</label>
-        <input type="number" id="boissonsInput" min="0" inputmode="numeric">
-        <div class="muted" id="boissonsCalc" style="font-size:11px;margin:-8px 0 12px"></div>
-      </div>
+    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Ventes calculées depuis le stock (ci-dessous) — rien à retaper ici.</p>
+    <div class="stock-calc-row" id="stockCalcRow">
+      <span>Chicha <b id="calcChicha">0 GNF</b></span>
+      <span>Boissons <b id="calcBoissons">0 GNF</b></span>
     </div>
-    <div class="two-col">
+    <div class="two-col mt">
       <div><label>Fond de caisse (GNF)</label><input type="number" id="fondInput" min="0" inputmode="numeric"></div>
       <div></div>
     </div>
@@ -180,8 +176,8 @@
 
   <!-- Stock -->
   <div class="card">
-    <h2 style="margin-top:0">Stock boissons — avant / après soirée</h2>
-    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Compte avant l'ouverture, recompte après — l'écart, c'est ce qui est parti.</p>
+    <h2 style="margin-top:0">Stock — avant / après soirée</h2>
+    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Choisis un produit (chicha compris), compte avant l'ouverture, recompte après — l'écart, c'est ce qui est vendu.</p>
     <div class="form-row">
       <select id="sProduit" style="flex:2;margin:0"><option value="">Choisir un produit…</option></select>
       <input type="number" id="sAvant" placeholder="Avant" min="0" inputmode="numeric">
@@ -193,7 +189,7 @@
   <!-- Produits & prix -->
   <div class="card">
     <h2 style="margin-top:0">Produits &amp; prix</h2>
-    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Sert au stock boissons et au calcul du total chicha. Propre au carnet, sans lien avec les prix du système.</p>
+    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Sert au stock (ci-dessus). Propre au carnet, sans lien avec les prix du système.</p>
     <div class="chips" id="pType">
       <span class="chip sel" data-v="boisson">Boisson</span>
       <span class="chip" data-v="chicha">Chicha</span>
@@ -238,8 +234,8 @@
     curMonth: null,
     sub: null,
   };
-  const prixChicha = () => st.produits.find(p=>p.type==="chicha")?.prix || 70000;
-  const prixBoisson = nom => st.produits.find(p=>p.type==="boisson" && p.nom===nom)?.prix || 0;
+  const produitOf = nom => st.produits.find(p=>p.nom===nom);
+  const prixOf = nom => produitOf(nom)?.prix || 0;
 
   function monthOf(d){ return d.slice(0,7); }
   function monthBounds(ym){
@@ -264,7 +260,7 @@
       st.entries = dep || []; st.joursMois = jrs || []; st.curMonth = ym;
     } catch(e) {
       st.entries = []; st.joursMois = [];
-      toast("Migration carnet (v4) à appliquer dans Supabase","ko");
+      toast("Migration carnet (v5) à appliquer dans Supabase","ko");
     }
   }
   async function loadJour(){
@@ -341,12 +337,10 @@
     $("sNet").textContent = gnf(vTot - dTot);
     $("sNet").style.color = (vTot-dTot) < 0 ? "var(--ko)" : "var(--gold)";
 
-    $("chichaQty").value = st.jour?.chicha_qty ?? "";
-    $("boissonsInput").value = st.jour?.total_boissons ?? "";
     $("fondInput").value = st.jour?.fond_caisse ?? "";
     $("noteInput").value = st.jour?.note || "";
-    updateChichaCalc();
-    updateBoissonsCalc();
+    $("calcChicha").textContent = gnf(st.jour?.total_chicha||0);
+    $("calcBoissons").textContent = gnf(st.jour?.total_boissons||0);
 
     $("dayCount").textContent = deps.length ? deps.length + " dépense" + (deps.length>1?"s":"") : "";
     const list = $("list");
@@ -372,20 +366,22 @@
     renderMois();
   }
 
-  function updateChichaCalc(){
-    const qty = Math.round(Number($("chichaQty").value)||0);
-    $("chichaCalc").textContent = `= ${gnf(qty * prixChicha())} (${qty} × ${gnf(prixChicha())})`;
-  }
-  function updateBoissonsCalc(){
-    let total = 0, has = false;
-    for (const r of st.stockToday){
+  // Total du jour, calculé depuis le stock compté (chicha + boissons confondus,
+  // séparés par le type du produit) — source unique, plus rien à retaper.
+  function stockTotals(rows){
+    let chicha = 0, boissons = 0;
+    for (const r of rows){
       if (r.apres==null) continue;
-      const p = prixBoisson(r.produit); if (!p) continue;
-      total += (r.avant - r.apres) * p; has = true;
+      const p = produitOf(r.produit); if (!p) continue;
+      const val = (r.avant - r.apres) * p.prix;
+      if (p.type==="chicha") chicha += val; else boissons += val;
     }
-    $("boissonsCalc").textContent = has ? `≈ ${gnf(total)} selon le stock compté` : "";
+    return { chicha, boissons };
   }
-  $("chichaQty").addEventListener("input", updateChichaCalc);
+  async function recomputeJourFromStock(){
+    const { chicha, boissons } = stockTotals(st.stockToday);
+    await saveJour({ total_chicha: chicha, total_boissons: boissons });
+  }
 
   function renderStockToday(){
     const rows = st.stockToday;
@@ -394,11 +390,11 @@
     else {
       el.innerHTML = rows.map(r => {
         const conso = r.apres!=null ? r.avant - r.apres : null;
-        const prix = prixBoisson(r.produit);
-        const val = conso!=null && prix ? conso*prix : null;
+        const p = produitOf(r.produit);
+        const val = conso!=null && p ? conso*p.prix : null;
         return `<div class="erow" data-id="${escHtml(r.id)}">
           <div class="lbl">
-            <div class="lmain">${escHtml(r.produit)}</div>
+            <div class="lmain">${escHtml(r.produit)}${p?.type==="chicha"?` <span class="mini-tag type-chicha">Chicha</span>`:""}</div>
             <div class="meta2">
               <span class="mini-tag">Avant ${r.avant}</span>
               ${conso!=null ? `<span class="mini-tag">Après ${r.apres}</span><span class="mini-tag ${conso>=0?"conso-pos":"conso-neg"}">Consommé ${conso}${val!=null?` · ${gnf(val)}`:""}</span>` : ""}
@@ -412,10 +408,12 @@
       }).join("");
     }
     const already = new Set(rows.map(r=>r.produit));
-    const options = st.produits.filter(p=>p.type==="boisson").sort((a,b)=>a.nom.localeCompare(b.nom,"fr"));
+    const chichaOpts = st.produits.filter(p=>p.type==="chicha");
+    const boissonOpts = st.produits.filter(p=>p.type==="boisson").sort((a,b)=>a.nom.localeCompare(b.nom,"fr"));
+    const optHtml = p => `<option value="${escHtml(p.nom)}"${already.has(p.nom)?" disabled":""}>${escHtml(p.nom)} (${gnf(p.prix)})</option>`;
     $("sProduit").innerHTML = `<option value="">Choisir un produit…</option>` +
-      options.map(p=>`<option value="${escHtml(p.nom)}"${already.has(p.nom)?" disabled":""}>${escHtml(p.nom)} (${gnf(p.prix)})</option>`).join("");
-    updateBoissonsCalc();
+      (chichaOpts.length ? `<optgroup label="Chicha">${chichaOpts.map(optHtml).join("")}</optgroup>` : "") +
+      (boissonOpts.length ? `<optgroup label="Boissons">${boissonOpts.map(optHtml).join("")}</optgroup>` : "");
   }
 
   function renderProduits(){
@@ -497,7 +495,7 @@
     const { error } = await db.from("carnet_produits").update({ prix }).eq("id", inp.dataset.id);
     if (error){ toast("Erreur","ko"); return; }
     const p = st.produits.find(x=>x.id===inp.dataset.id); if (p) p.prix = prix;
-    updateChichaCalc();
+    recomputeJourFromStock();
     toast("Prix mis à jour","ok");
   });
   $("produitsList").addEventListener("click", async ev => {
@@ -510,20 +508,19 @@
     toast("Supprimé","ok");
   });
 
-  /* ── Chiffres du jour (ventes totaux + fond + note) ───────────── */
+  /* ── Chiffres du jour (ventes calculées depuis le stock + fond + note) ── */
   async function saveJour(patch){
     const rec = {
       date: st.curDate,
       total_chicha: st.jour?.total_chicha ?? 0,
       total_boissons: st.jour?.total_boissons ?? 0,
-      chicha_qty: st.jour?.chicha_qty ?? 0,
       fond_caisse: st.jour?.fond_caisse ?? 0,
       note: st.jour?.note ?? null,
       ...patch,
       maj_par: meName, updated_at: new Date().toISOString(),
     };
     const { data, error } = await db.from("carnet_jours").upsert(rec, { onConflict:"date" }).select().single();
-    if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v4) à appliquer dans Supabase" : "Erreur","ko"); return false; }
+    if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v5) à appliquer dans Supabase" : "Erreur","ko"); return false; }
     st.jour = data;
     const idx = st.joursMois.findIndex(j=>j.date===st.curDate);
     if (idx>=0) st.joursMois[idx] = data; else st.joursMois.push(data);
@@ -531,11 +528,7 @@
     return true;
   }
   $("saveJourBtn").addEventListener("click", async () => {
-    const chichaQty = Math.round(Number($("chichaQty").value)||0);
     const ok = await saveJour({
-      chicha_qty: chichaQty,
-      total_chicha: chichaQty * prixChicha(),
-      total_boissons: Math.round(Number($("boissonsInput").value)||0),
       fond_caisse: Math.round(Number($("fondInput").value)||0),
       note: $("noteInput").value.trim()||null,
     });
@@ -548,7 +541,7 @@
     if (!(montant > 0)){ toast("Montant invalide","ko"); return; }
     const rec = { date: st.curDate, type:"depense", categorie: chipVal("dCats"), label: $("dLabel").value.trim()||null, montant, cree_par: meName };
     const { data, error } = await db.from("carnet_entrees").insert(rec).select().single();
-    if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v4) à appliquer dans Supabase" : "Erreur","ko"); return; }
+    if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v5) à appliquer dans Supabase" : "Erreur","ko"); return; }
     st.entries.push(data);
     render(); loadGlobal();
     $("dLabel").value=""; $("dMontant").value=""; $("dLabel").focus();
@@ -574,7 +567,7 @@
     if (!(avant >= 0) || $("sAvant").value===""){ toast("Quantité invalide","ko"); return; }
     const rec = { date: st.curDate, produit, avant, cree_par: meName };
     const { data, error } = await db.from("carnet_stock").upsert(rec, { onConflict:"date,produit" }).select().single();
-    if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v4) à appliquer dans Supabase" : "Erreur","ko"); return; }
+    if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v5) à appliquer dans Supabase" : "Erreur","ko"); return; }
     const idx = st.stockToday.findIndex(r=>r.id===data.id);
     if (idx>=0) st.stockToday[idx] = data; else st.stockToday.push(data);
     renderStockToday(); loadGlobal();
@@ -594,14 +587,14 @@
       if (error){ toast("Erreur","ko"); return; }
       const idx = st.stockToday.findIndex(r=>r.id===data.id);
       if (idx>=0) st.stockToday[idx] = data;
-      renderStockToday(); loadGlobal();
+      renderStockToday(); await recomputeJourFromStock();
       toast("Après enregistré","ok");
     } else if (del){
       if (!confirm("Supprimer ce comptage ?")) return;
       const { error } = await db.from("carnet_stock").delete().eq("id", del.dataset.id);
       if (error){ toast("Erreur","ko"); return; }
       st.stockToday = st.stockToday.filter(r => r.id !== del.dataset.id);
-      renderStockToday(); loadGlobal();
+      renderStockToday(); await recomputeJourFromStock();
       toast("Supprimé","ok");
     }
   });

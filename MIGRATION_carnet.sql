@@ -1,11 +1,12 @@
 -- =====================================================================
--- MEDELLIN LOUNGE — MIGRATION_carnet.sql (v5 — totaux jour + stock avant/après + catalogue produits)
+-- MEDELLIN LOUNGE — MIGRATION_carnet.sql (v5 — stock unique chicha+boissons → totaux jour)
 -- Carnet de gestion quotidien, partagé et temps réel :
---   · ventes = 2 totaux par jour (Chicha, Boissons) — PAS par transaction
---   · chicha = nombre vendu × prix fixe (catalogue)
+--   · UN SEUL mécanisme de comptage : stock avant/après soirée, produit par
+--     produit (catalogue), chicha comprise — pas de saisie séparée
+--   · total_chicha/total_boissons du jour = calculés automatiquement depuis
+--     le stock compté (écart avant−après × prix), jamais retapés à la main
 --   · dépenses par nature, restent itemisées (achats/salaire/charge/divers)
---   · fond de caisse + note du jour
---   · stock boissons = comptage avant/après soirée par produit (écart = consommé)
+--   · fond de caisse + note du jour = seuls champs encore saisis à la main
 --   · catalogue produits (nom, type, prix) — propre au carnet, sans lien avec
 --     le catalogue du vrai système (évite de modifier des prix utilisés en caisse)
 -- Idempotent. À exécuter dans Supabase → SQL Editor → Run
@@ -28,12 +29,12 @@ CREATE INDEX IF NOT EXISTS idx_carnet_entrees_date ON carnet_entrees(date);
 ALTER TABLE carnet_entrees ADD COLUMN IF NOT EXISTS categorie TEXT;
 ALTER TABLE carnet_entrees ADD COLUMN IF NOT EXISTS paiement  TEXT;
 
--- Métadonnées + totaux du jour (1 ligne par date)
+-- Métadonnées + totaux du jour (1 ligne par date) — total_chicha/total_boissons
+-- recalculés automatiquement depuis carnet_stock à chaque comptage "après"
 CREATE TABLE IF NOT EXISTS carnet_jours (
   date           DATE PRIMARY KEY,
   total_chicha   INTEGER DEFAULT 0,
   total_boissons INTEGER DEFAULT 0,
-  chicha_qty     INTEGER DEFAULT 0,   -- nombre de chichas vendus (total_chicha = chicha_qty × prix au moment de la saisie)
   fond_caisse    INTEGER DEFAULT 0,
   note           TEXT,
   maj_par        TEXT,
@@ -42,7 +43,6 @@ CREATE TABLE IF NOT EXISTS carnet_jours (
 ALTER TABLE carnet_jours DISABLE ROW LEVEL SECURITY;
 ALTER TABLE carnet_jours ADD COLUMN IF NOT EXISTS total_chicha   INTEGER DEFAULT 0;
 ALTER TABLE carnet_jours ADD COLUMN IF NOT EXISTS total_boissons INTEGER DEFAULT 0;
-ALTER TABLE carnet_jours ADD COLUMN IF NOT EXISTS chicha_qty     INTEGER DEFAULT 0;
 
 -- Report ponctuel : les ventes déjà saisies en détail (ancien modèle par
 -- transaction) sont reportées dans les totaux du jour (nouveau modèle).
@@ -60,8 +60,8 @@ ON CONFLICT (date) DO UPDATE SET
   total_chicha   = carnet_jours.total_chicha   + EXCLUDED.total_chicha,
   total_boissons = carnet_jours.total_boissons + EXCLUDED.total_boissons;
 
--- Stock boissons : comptage avant / après soirée par produit et par jour.
--- L'écart (avant − après) = ce qui est parti ce jour-là.
+-- Stock : comptage avant / après soirée par produit et par jour — chicha ET
+-- boissons, même mécanisme. L'écart (avant − après) = ce qui est vendu.
 CREATE TABLE IF NOT EXISTS carnet_stock (
   id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   date       DATE NOT NULL,

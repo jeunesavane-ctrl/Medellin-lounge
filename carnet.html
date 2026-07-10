@@ -186,6 +186,16 @@
     <div class="list mt" id="stockToday">Chargement…</div>
   </div>
 
+  <!-- Historique du stock -->
+  <div class="card">
+    <div class="row between">
+      <h2 style="margin:0">Historique du stock</h2>
+      <span class="muted" id="stockMoisSub" style="font-size:12px"></span>
+    </div>
+    <p class="muted" style="font-size:12px;margin:6px 0 10px">Tous les comptages du mois affiché — la trace de chaque soirée.</p>
+    <div class="list mt" id="stockMoisList">Chargement…</div>
+  </div>
+
   <!-- Produits & prix -->
   <div class="card">
     <h2 style="margin-top:0">Produits &amp; prix</h2>
@@ -229,6 +239,7 @@
     joursMois: [],     // carnet_jours du mois affiché (totaux ventes)
     jour: null,        // carnet_jours du jour affiché
     stockToday: [],    // carnet_stock du jour affiché
+    stockMois: [],     // carnet_stock du mois affiché (trace complète)
     produits: [],      // catalogue carnet_produits
     curDate: todayISO(),
     curMonth: null,
@@ -252,14 +263,15 @@
     const ym = monthOf(st.curDate);
     const { start, end } = monthBounds(ym);
     try {
-      const [{ data:dep, error:e1 }, { data:jrs, error:e2 }] = await Promise.all([
+      const [{ data:dep, error:e1 }, { data:jrs, error:e2 }, { data:stk, error:e3 }] = await Promise.all([
         db.from("carnet_entrees").select("*").eq("type","depense").gte("date",start).lt("date",end).order("created_at"),
         db.from("carnet_jours").select("*").gte("date",start).lt("date",end),
+        db.from("carnet_stock").select("*").gte("date",start).lt("date",end).order("date",{ascending:false}).order("created_at",{ascending:false}),
       ]);
-      if (e1) throw e1; if (e2) throw e2;
-      st.entries = dep || []; st.joursMois = jrs || []; st.curMonth = ym;
+      if (e1) throw e1; if (e2) throw e2; if (e3) throw e3;
+      st.entries = dep || []; st.joursMois = jrs || []; st.stockMois = stk || []; st.curMonth = ym;
     } catch(e) {
-      st.entries = []; st.joursMois = [];
+      st.entries = []; st.joursMois = []; st.stockMois = [];
       toast("Migration carnet (v5) à appliquer dans Supabase","ko");
     }
   }
@@ -362,6 +374,7 @@
     }
 
     renderStockToday();
+    renderStockMois();
     renderProduits();
     renderMois();
   }
@@ -414,6 +427,31 @@
     $("sProduit").innerHTML = `<option value="">Choisir un produit…</option>` +
       (chichaOpts.length ? `<optgroup label="Chicha">${chichaOpts.map(optHtml).join("")}</optgroup>` : "") +
       (boissonOpts.length ? `<optgroup label="Boissons">${boissonOpts.map(optHtml).join("")}</optgroup>` : "");
+  }
+
+  // Trace de tous les comptages du mois affiché — c'est ici que "avant/après"
+  // laisse une preuve consultable, au-delà du jour en cours.
+  function renderStockMois(){
+    $("stockMoisSub").textContent = st.stockMois.length ? `${st.stockMois.length} comptage${st.stockMois.length>1?"s":""}` : "";
+    const el = $("stockMoisList");
+    if (!st.stockMois.length){ el.innerHTML = `<p class="muted">Aucun comptage ce mois.</p>`; return; }
+    el.innerHTML = st.stockMois.map(r => {
+      const conso = r.apres!=null ? r.avant - r.apres : null;
+      const p = produitOf(r.produit);
+      const val = conso!=null && p ? conso*p.prix : null;
+      return `<div class="erow">
+        <div class="lbl">
+          <div class="lmain">${escHtml(frDateShort(r.date))} — ${escHtml(r.produit)}${p?.type==="chicha"?` <span class="mini-tag type-chicha">Chicha</span>`:""}</div>
+          <div class="meta2">
+            <span class="mini-tag">Avant ${r.avant}</span>
+            ${conso!=null
+              ? `<span class="mini-tag">Après ${r.apres}</span><span class="mini-tag ${conso>=0?"conso-pos":"conso-neg"}">Vendu ${conso}${val!=null?` · ${gnf(val)}`:""}</span>`
+              : `<span class="mini-tag" style="color:var(--warn);border-color:rgba(232,180,74,.35)">En attente du comptage après</span>`}
+            ${r.cree_par ? `<span class="mini-tag">${escHtml(r.cree_par)}</span>` : ""}
+          </div>
+        </div>
+      </div>`;
+    }).join("");
   }
 
   function renderProduits(){
@@ -560,6 +598,19 @@
   });
 
   /* ── Stock (avant / après) ────────────────────────────────────── */
+  // Garde st.stockToday (jour affiché) ET st.stockMois (trace du mois) en
+  // phase après chaque écriture, sans attendre l'écho du canal temps réel.
+  function upsertStockLocal(row){
+    const i1 = st.stockToday.findIndex(r=>r.id===row.id);
+    if (i1>=0) st.stockToday[i1] = row; else if (row.date===st.curDate) st.stockToday.push(row);
+    const i2 = st.stockMois.findIndex(r=>r.id===row.id);
+    if (i2>=0) st.stockMois[i2] = row; else st.stockMois.unshift(row);
+  }
+  function removeStockLocal(id){
+    st.stockToday = st.stockToday.filter(r=>r.id!==id);
+    st.stockMois = st.stockMois.filter(r=>r.id!==id);
+  }
+
   $("addStock").addEventListener("click", async () => {
     const produit = $("sProduit").value;
     const avant = Math.round(Number($("sAvant").value)||0);
@@ -568,9 +619,8 @@
     const rec = { date: st.curDate, produit, avant, cree_par: meName };
     const { data, error } = await db.from("carnet_stock").upsert(rec, { onConflict:"date,produit" }).select().single();
     if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v5) à appliquer dans Supabase" : "Erreur","ko"); return; }
-    const idx = st.stockToday.findIndex(r=>r.id===data.id);
-    if (idx>=0) st.stockToday[idx] = data; else st.stockToday.push(data);
-    renderStockToday(); loadGlobal();
+    upsertStockLocal(data);
+    renderStockToday(); renderStockMois(); loadGlobal();
     $("sProduit").value=""; $("sAvant").value="";
     toast("Compté","ok");
   });
@@ -585,16 +635,15 @@
       if (row.querySelector(".apres-input").value===""){ toast("Entre une valeur","ko"); return; }
       const { data, error } = await db.from("carnet_stock").update({ apres, updated_at:new Date().toISOString() }).eq("id", save.dataset.id).select().single();
       if (error){ toast("Erreur","ko"); return; }
-      const idx = st.stockToday.findIndex(r=>r.id===data.id);
-      if (idx>=0) st.stockToday[idx] = data;
-      renderStockToday(); await recomputeJourFromStock();
+      upsertStockLocal(data);
+      renderStockToday(); renderStockMois(); await recomputeJourFromStock();
       toast("Après enregistré","ok");
     } else if (del){
       if (!confirm("Supprimer ce comptage ?")) return;
       const { error } = await db.from("carnet_stock").delete().eq("id", del.dataset.id);
       if (error){ toast("Erreur","ko"); return; }
-      st.stockToday = st.stockToday.filter(r => r.id !== del.dataset.id);
-      renderStockToday(); await recomputeJourFromStock();
+      removeStockLocal(del.dataset.id);
+      renderStockToday(); renderStockMois(); await recomputeJourFromStock();
       toast("Supprimé","ok");
     }
   });
@@ -612,6 +661,7 @@
       if (hasJour){ const { error } = await db.from("carnet_jours").delete().eq("date", st.curDate); if (error) throw error; }
       st.entries = st.entries.filter(e => e.date !== st.curDate);
       st.joursMois = st.joursMois.filter(j => j.date !== st.curDate);
+      st.stockMois = st.stockMois.filter(r => r.date !== st.curDate);
       st.stockToday = [];
       st.jour = null;
       render(); loadGlobal();
@@ -653,7 +703,7 @@
     st.sub = db.channel("carnet")
       .on("postgres_changes",{event:"*",schema:"public",table:"carnet_entrees"}, () => { st.curMonth = null; refresh(); loadGlobal(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"carnet_jours"}, () => { st.curMonth = null; refresh(); loadGlobal(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"carnet_stock"}, () => { loadStockToday().then(render); loadGlobal(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"carnet_stock"}, () => { st.curMonth = null; refresh(); loadGlobal(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"carnet_produits"}, () => { loadProduits().then(render); })
       .subscribe();
   }

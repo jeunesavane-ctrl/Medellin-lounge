@@ -31,7 +31,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; }
+html, body { min-height: 100vh; min-height: 100dvh; }
 ::selection { background: rgba(201,110,72,.3); color: #fff; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }

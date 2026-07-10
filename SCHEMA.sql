@@ -360,8 +360,8 @@ CREATE TABLE IF NOT EXISTS bons_chicha (
 ALTER TABLE bons_chicha DISABLE ROW LEVEL SECURITY;
 
 -- 24. carnet_entrees (carnet de gestion quotidien hors circuit formel — manager/owner)
---     categorie : vente → chicha|boissons|autre · dépense → achats|salaire|charge|divers
---     paiement (ventes) : especes|om|credit
+--     dépenses uniquement, itemisées : achats|salaire|charge|divers
+--     ("vente" existe encore côté contrainte pour compat historique, non utilisé)
 CREATE TABLE IF NOT EXISTS carnet_entrees (
   id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   date       DATE NOT NULL,
@@ -375,18 +375,35 @@ CREATE TABLE IF NOT EXISTS carnet_entrees (
 );
 ALTER TABLE carnet_entrees DISABLE ROW LEVEL SECURITY;
 
--- 25. carnet_jours (fond de caisse + note libre, 1 ligne par date)
+-- 25. carnet_jours (1 ligne par date) — total_chicha/total_boissons = ventes du
+--     jour saisies en UN chiffre chacune (pas par transaction), + fond de caisse + note
 CREATE TABLE IF NOT EXISTS carnet_jours (
-  date        DATE PRIMARY KEY,
-  fond_caisse INTEGER DEFAULT 0,
-  note        TEXT,
-  maj_par     TEXT,
-  updated_at  TIMESTAMPTZ DEFAULT now()
+  date           DATE PRIMARY KEY,
+  total_chicha   INTEGER DEFAULT 0,
+  total_boissons INTEGER DEFAULT 0,
+  fond_caisse    INTEGER DEFAULT 0,
+  note           TEXT,
+  maj_par        TEXT,
+  updated_at     TIMESTAMPTZ DEFAULT now()
 );
 ALTER TABLE carnet_jours DISABLE ROW LEVEL SECURITY;
 
+-- 26. carnet_stock (comptage avant/après soirée par produit ; écart = consommé)
+CREATE TABLE IF NOT EXISTS carnet_stock (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  date       DATE NOT NULL,
+  produit    TEXT NOT NULL,
+  avant      INTEGER,
+  apres      INTEGER,
+  cree_par   TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(date, produit)
+);
+ALTER TABLE carnet_stock DISABLE ROW LEVEL SECURITY;
+
 -- =====================================================================
--- FIN — 25 tables créées.
+-- FIN — 26 tables créées.
 -- Étape suivante (1) : shared.js + shared.css.
 -- Bootstrap auth : insérer pin_owner / owner_nom dans config avant
 --   le premier login (sera fait via parametres.html ou seed manuel).

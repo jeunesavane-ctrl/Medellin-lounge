@@ -132,8 +132,16 @@
     <h2 style="margin-top:0">Chiffres du jour</h2>
     <p class="muted" style="font-size:12px;margin:-4px 0 10px">Le total de la soirée, pas vente par vente.</p>
     <div class="two-col">
-      <div><label>Total Chicha (GNF)</label><input type="number" id="chichaInput" min="0" inputmode="numeric"></div>
-      <div><label>Total Boissons (GNF)</label><input type="number" id="boissonsInput" min="0" inputmode="numeric"></div>
+      <div>
+        <label>Chichas vendus (nombre)</label>
+        <input type="number" id="chichaQty" min="0" inputmode="numeric">
+        <div class="muted" id="chichaCalc" style="font-size:11px;margin:-8px 0 12px">= 0 GNF</div>
+      </div>
+      <div>
+        <label>Total Boissons (GNF)</label>
+        <input type="number" id="boissonsInput" min="0" inputmode="numeric">
+        <div class="muted" id="boissonsCalc" style="font-size:11px;margin:-8px 0 12px"></div>
+      </div>
     </div>
     <div class="two-col">
       <div><label>Fond de caisse (GNF)</label><input type="number" id="fondInput" min="0" inputmode="numeric"></div>
@@ -172,15 +180,30 @@
 
   <!-- Stock -->
   <div class="card">
-    <h2 style="margin-top:0">Stock — avant / après soirée</h2>
+    <h2 style="margin-top:0">Stock boissons — avant / après soirée</h2>
     <p class="muted" style="font-size:12px;margin:-4px 0 10px">Compte avant l'ouverture, recompte après — l'écart, c'est ce qui est parti.</p>
     <div class="form-row">
-      <input type="text" id="sProduit" placeholder="ex : Love, Coca…" list="stockProdList">
+      <select id="sProduit" style="flex:2;margin:0"><option value="">Choisir un produit…</option></select>
       <input type="number" id="sAvant" placeholder="Avant" min="0" inputmode="numeric">
       <button class="btn" id="addStock" style="width:auto;flex-shrink:0">+</button>
     </div>
-    <datalist id="stockProdList"></datalist>
     <div class="list mt" id="stockToday">Chargement…</div>
+  </div>
+
+  <!-- Produits & prix -->
+  <div class="card">
+    <h2 style="margin-top:0">Produits &amp; prix</h2>
+    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Sert au stock boissons et au calcul du total chicha. Propre au carnet, sans lien avec les prix du système.</p>
+    <div class="chips" id="pType">
+      <span class="chip sel" data-v="boisson">Boisson</span>
+      <span class="chip" data-v="chicha">Chicha</span>
+    </div>
+    <div class="form-row">
+      <input type="text" id="pNom" placeholder="ex : Sprite">
+      <input type="number" id="pPrix" placeholder="Prix GNF" min="0" inputmode="numeric">
+      <button class="btn" id="addProduit" style="width:auto;flex-shrink:0">+</button>
+    </div>
+    <div class="list mt" id="produitsList">Chargement…</div>
   </div>
 
   <!-- Récap du mois -->
@@ -210,10 +233,13 @@
     joursMois: [],     // carnet_jours du mois affiché (totaux ventes)
     jour: null,        // carnet_jours du jour affiché
     stockToday: [],    // carnet_stock du jour affiché
+    produits: [],      // catalogue carnet_produits
     curDate: todayISO(),
     curMonth: null,
     sub: null,
   };
+  const prixChicha = () => st.produits.find(p=>p.type==="chicha")?.prix || 70000;
+  const prixBoisson = nom => st.produits.find(p=>p.type==="boisson" && p.nom===nom)?.prix || 0;
 
   function monthOf(d){ return d.slice(0,7); }
   function monthBounds(ym){
@@ -254,6 +280,13 @@
       const { data } = await db.from("carnet_stock").select("*").eq("date", st.curDate).order("created_at");
       st.stockToday = data || [];
     } catch(e) { /* table absente */ }
+  }
+  async function loadProduits(){
+    try {
+      const { data, error } = await db.from("carnet_produits").select("*").eq("actif",true).order("nom");
+      if (error) throw error;
+      st.produits = data || [];
+    } catch(e) { st.produits = []; }
   }
   async function refresh(){
     if (monthOf(st.curDate) !== st.curMonth) await loadMonth();
@@ -308,10 +341,12 @@
     $("sNet").textContent = gnf(vTot - dTot);
     $("sNet").style.color = (vTot-dTot) < 0 ? "var(--ko)" : "var(--gold)";
 
-    $("chichaInput").value = st.jour?.total_chicha ?? "";
+    $("chichaQty").value = st.jour?.chicha_qty ?? "";
     $("boissonsInput").value = st.jour?.total_boissons ?? "";
     $("fondInput").value = st.jour?.fond_caisse ?? "";
     $("noteInput").value = st.jour?.note || "";
+    updateChichaCalc();
+    updateBoissonsCalc();
 
     $("dayCount").textContent = deps.length ? deps.length + " dépense" + (deps.length>1?"s":"") : "";
     const list = $("list");
@@ -333,31 +368,69 @@
     }
 
     renderStockToday();
+    renderProduits();
     renderMois();
   }
+
+  function updateChichaCalc(){
+    const qty = Math.round(Number($("chichaQty").value)||0);
+    $("chichaCalc").textContent = `= ${gnf(qty * prixChicha())} (${qty} × ${gnf(prixChicha())})`;
+  }
+  function updateBoissonsCalc(){
+    let total = 0, has = false;
+    for (const r of st.stockToday){
+      if (r.apres==null) continue;
+      const p = prixBoisson(r.produit); if (!p) continue;
+      total += (r.avant - r.apres) * p; has = true;
+    }
+    $("boissonsCalc").textContent = has ? `≈ ${gnf(total)} selon le stock compté` : "";
+  }
+  $("chichaQty").addEventListener("input", updateChichaCalc);
 
   function renderStockToday(){
     const rows = st.stockToday;
     const el = $("stockToday");
-    if (!rows.length){ el.innerHTML = `<p class="muted">Aucun produit compté aujourd'hui.</p>`; return; }
-    el.innerHTML = rows.map(r => {
-      const conso = r.apres!=null ? r.avant - r.apres : null;
-      return `<div class="erow" data-id="${escHtml(r.id)}">
-        <div class="lbl">
-          <div class="lmain">${escHtml(r.produit)}</div>
-          <div class="meta2">
-            <span class="mini-tag">Avant ${r.avant}</span>
-            ${conso!=null ? `<span class="mini-tag">Après ${r.apres}</span><span class="mini-tag ${conso>=0?"conso-pos":"conso-neg"}">Consommé ${conso}</span>` : ""}
+    if (!rows.length){ el.innerHTML = `<p class="muted">Aucun produit compté aujourd'hui.</p>`; }
+    else {
+      el.innerHTML = rows.map(r => {
+        const conso = r.apres!=null ? r.avant - r.apres : null;
+        const prix = prixBoisson(r.produit);
+        const val = conso!=null && prix ? conso*prix : null;
+        return `<div class="erow" data-id="${escHtml(r.id)}">
+          <div class="lbl">
+            <div class="lmain">${escHtml(r.produit)}</div>
+            <div class="meta2">
+              <span class="mini-tag">Avant ${r.avant}</span>
+              ${conso!=null ? `<span class="mini-tag">Après ${r.apres}</span><span class="mini-tag ${conso>=0?"conso-pos":"conso-neg"}">Consommé ${conso}${val!=null?` · ${gnf(val)}`:""}</span>` : ""}
+            </div>
           </div>
-        </div>
-        ${conso==null
-          ? `<input type="number" class="apres-input" data-id="${escHtml(r.id)}" placeholder="Après" min="0">
-             <button class="btn btn-sm save-apres" data-id="${escHtml(r.id)}">✓</button>`
-          : `<button class="del" data-id="${escHtml(r.id)}">✕</button>`}
+          ${conso==null
+            ? `<input type="number" class="apres-input" data-id="${escHtml(r.id)}" placeholder="Après" min="0">
+               <button class="btn btn-sm save-apres" data-id="${escHtml(r.id)}">✓</button>`
+            : `<button class="del" data-id="${escHtml(r.id)}">✕</button>`}
+        </div>`;
+      }).join("");
+    }
+    const already = new Set(rows.map(r=>r.produit));
+    const options = st.produits.filter(p=>p.type==="boisson").sort((a,b)=>a.nom.localeCompare(b.nom,"fr"));
+    $("sProduit").innerHTML = `<option value="">Choisir un produit…</option>` +
+      options.map(p=>`<option value="${escHtml(p.nom)}"${already.has(p.nom)?" disabled":""}>${escHtml(p.nom)} (${gnf(p.prix)})</option>`).join("");
+    updateBoissonsCalc();
+  }
+
+  function renderProduits(){
+    const chichaRows = st.produits.filter(p=>p.type==="chicha");
+    const boissonRows = st.produits.filter(p=>p.type==="boisson").sort((a,b)=>a.nom.localeCompare(b.nom,"fr"));
+    const rowHtml = p => `
+      <div class="erow" data-id="${escHtml(p.id)}">
+        <div class="lbl"><div class="lmain">${escHtml(p.nom)}</div></div>
+        <input type="number" class="prix-input" data-id="${escHtml(p.id)}" value="${p.prix}" min="0" style="width:90px;margin:0">
+        <button class="del" data-id="${escHtml(p.id)}">✕</button>
       </div>`;
-    }).join("");
-    const names = [...new Set(st.stockToday.map(r=>r.produit))].sort();
-    $("stockProdList").innerHTML = names.map(n=>`<option value="${escHtml(n)}">`).join("");
+    let html = "";
+    if (chichaRows.length) html += `<h3>Chicha</h3>` + chichaRows.map(rowHtml).join("");
+    if (boissonRows.length) html += `<h3>Boissons</h3>` + boissonRows.map(rowHtml).join("");
+    $("produitsList").innerHTML = html || `<p class="muted">Aucun produit.</p>`;
   }
 
   function renderMois(){
@@ -390,11 +463,52 @@
   function sum2(rows, field){ return rows.reduce((a,r)=>a+(r[field]||0),0); }
 
   /* ── Chips ─────────────────────────────────────────────────── */
-  $("dCats").addEventListener("click", ev => {
-    const c = ev.target.closest(".chip"); if (!c) return;
-    $("dCats").querySelectorAll(".chip").forEach(x => x.classList.toggle("sel", x === c));
+  ["dCats","pType"].forEach(id => {
+    $(id).addEventListener("click", ev => {
+      const c = ev.target.closest(".chip"); if (!c) return;
+      $(id).querySelectorAll(".chip").forEach(x => x.classList.toggle("sel", x === c));
+    });
   });
   function chipVal(boxId){ return document.querySelector(`#${boxId} .chip.sel`)?.dataset.v; }
+
+  /* ── Produits & prix ───────────────────────────────────────── */
+  $("addProduit").addEventListener("click", async () => {
+    const nom = $("pNom").value.trim();
+    const prix = Math.round(Number($("pPrix").value)||0);
+    const type = chipVal("pType");
+    if (!nom){ toast("Nom du produit requis","ko"); return; }
+    if (!(prix > 0)){ toast("Prix invalide","ko"); return; }
+    const { data, error } = await db.from("carnet_produits").insert({ nom, type, prix }).select().single();
+    if (error){
+      toast(error.code==="23505" ? "Ce produit existe déjà" : (["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v5) à appliquer dans Supabase" : "Erreur"), "ko");
+      return;
+    }
+    st.produits.push(data);
+    renderProduits(); renderStockToday();
+    $("pNom").value=""; $("pPrix").value=""; $("pNom").focus();
+    toast("Produit ajouté","ok");
+  });
+  $("pPrix").addEventListener("keydown", ev => { if (ev.key==="Enter") $("addProduit").click(); });
+
+  $("produitsList").addEventListener("change", async ev => {
+    const inp = ev.target.closest(".prix-input"); if (!inp) return;
+    const prix = Math.round(Number(inp.value)||0);
+    if (!(prix > 0)){ toast("Prix invalide","ko"); return; }
+    const { error } = await db.from("carnet_produits").update({ prix }).eq("id", inp.dataset.id);
+    if (error){ toast("Erreur","ko"); return; }
+    const p = st.produits.find(x=>x.id===inp.dataset.id); if (p) p.prix = prix;
+    updateChichaCalc();
+    toast("Prix mis à jour","ok");
+  });
+  $("produitsList").addEventListener("click", async ev => {
+    const del = ev.target.closest(".del"); if (!del) return;
+    if (!confirm("Supprimer ce produit du catalogue ?")) return;
+    const { error } = await db.from("carnet_produits").delete().eq("id", del.dataset.id);
+    if (error){ toast("Erreur","ko"); return; }
+    st.produits = st.produits.filter(p=>p.id!==del.dataset.id);
+    renderProduits(); renderStockToday();
+    toast("Supprimé","ok");
+  });
 
   /* ── Chiffres du jour (ventes totaux + fond + note) ───────────── */
   async function saveJour(patch){
@@ -402,6 +516,7 @@
       date: st.curDate,
       total_chicha: st.jour?.total_chicha ?? 0,
       total_boissons: st.jour?.total_boissons ?? 0,
+      chicha_qty: st.jour?.chicha_qty ?? 0,
       fond_caisse: st.jour?.fond_caisse ?? 0,
       note: st.jour?.note ?? null,
       ...patch,
@@ -416,8 +531,10 @@
     return true;
   }
   $("saveJourBtn").addEventListener("click", async () => {
+    const chichaQty = Math.round(Number($("chichaQty").value)||0);
     const ok = await saveJour({
-      total_chicha: Math.round(Number($("chichaInput").value)||0),
+      chicha_qty: chichaQty,
+      total_chicha: chichaQty * prixChicha(),
       total_boissons: Math.round(Number($("boissonsInput").value)||0),
       fond_caisse: Math.round(Number($("fondInput").value)||0),
       note: $("noteInput").value.trim()||null,
@@ -451,17 +568,17 @@
 
   /* ── Stock (avant / après) ────────────────────────────────────── */
   $("addStock").addEventListener("click", async () => {
-    const produit = $("sProduit").value.trim();
+    const produit = $("sProduit").value;
     const avant = Math.round(Number($("sAvant").value)||0);
-    if (!produit){ toast("Nom du produit requis","ko"); return; }
+    if (!produit){ toast("Choisis un produit","ko"); return; }
     if (!(avant >= 0) || $("sAvant").value===""){ toast("Quantité invalide","ko"); return; }
     const rec = { date: st.curDate, produit, avant, cree_par: meName };
     const { data, error } = await db.from("carnet_stock").upsert(rec, { onConflict:"date,produit" }).select().single();
     if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v4) à appliquer dans Supabase" : "Erreur","ko"); return; }
     const idx = st.stockToday.findIndex(r=>r.id===data.id);
     if (idx>=0) st.stockToday[idx] = data; else st.stockToday.push(data);
-    renderStockToday();
-    $("sProduit").value=""; $("sAvant").value=""; $("sProduit").focus();
+    renderStockToday(); loadGlobal();
+    $("sProduit").value=""; $("sAvant").value="";
     toast("Compté","ok");
   });
   $("sAvant").addEventListener("keydown", ev => { if (ev.key==="Enter") $("addStock").click(); });
@@ -544,10 +661,11 @@
       .on("postgres_changes",{event:"*",schema:"public",table:"carnet_entrees"}, () => { st.curMonth = null; refresh(); loadGlobal(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"carnet_jours"}, () => { st.curMonth = null; refresh(); loadGlobal(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"carnet_stock"}, () => { loadStockToday().then(render); loadGlobal(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"carnet_produits"}, () => { loadProduits().then(render); })
       .subscribe();
   }
   window.addEventListener("beforeunload", () => { if (st.sub) db.removeChannel(st.sub); });
 
-  refresh().then(() => { loadGlobal(); subscribe(); });
+  loadProduits().then(refresh).then(() => { loadGlobal(); subscribe(); });
 </script>
 </body></html>

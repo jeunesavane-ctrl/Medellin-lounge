@@ -377,10 +377,12 @@ ALTER TABLE carnet_entrees DISABLE ROW LEVEL SECURITY;
 
 -- 25. carnet_jours (1 ligne par date) — total_chicha/total_boissons = ventes du
 --     jour saisies en UN chiffre chacune (pas par transaction), + fond de caisse + note
+--     chicha_qty = nombre de chichas vendus (total_chicha figé au prix du jour de saisie)
 CREATE TABLE IF NOT EXISTS carnet_jours (
   date           DATE PRIMARY KEY,
   total_chicha   INTEGER DEFAULT 0,
   total_boissons INTEGER DEFAULT 0,
+  chicha_qty     INTEGER DEFAULT 0,
   fond_caisse    INTEGER DEFAULT 0,
   note           TEXT,
   maj_par        TEXT,
@@ -388,7 +390,7 @@ CREATE TABLE IF NOT EXISTS carnet_jours (
 );
 ALTER TABLE carnet_jours DISABLE ROW LEVEL SECURITY;
 
--- 26. carnet_stock (comptage avant/après soirée par produit ; écart = consommé)
+-- 26. carnet_stock (comptage avant/après soirée par produit BOISSON ; écart = consommé)
 CREATE TABLE IF NOT EXISTS carnet_stock (
   id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   date       DATE NOT NULL,
@@ -402,8 +404,20 @@ CREATE TABLE IF NOT EXISTS carnet_stock (
 );
 ALTER TABLE carnet_stock DISABLE ROW LEVEL SECURITY;
 
+-- 27. carnet_produits (catalogue nom/type/prix, propre au carnet — jamais lié
+--     aux prix utilisés en caisse par le vrai système ; "petit truc" pour éditer)
+CREATE TABLE IF NOT EXISTS carnet_produits (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  nom        TEXT NOT NULL UNIQUE,
+  type       TEXT NOT NULL CHECK (type IN ('chicha','boisson')),
+  prix       INTEGER NOT NULL CHECK (prix > 0),
+  actif      BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE carnet_produits DISABLE ROW LEVEL SECURITY;
+
 -- =====================================================================
--- FIN — 26 tables créées.
+-- FIN — 27 tables créées.
 -- Étape suivante (1) : shared.js + shared.css.
 -- Bootstrap auth : insérer pin_owner / owner_nom dans config avant
 --   le premier login (sera fait via parametres.html ou seed manuel).

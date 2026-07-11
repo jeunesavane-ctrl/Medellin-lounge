@@ -31,6 +31,11 @@
   .vrow { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); font-size:14px; }
   .vrow-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
   .tag-pending { color:var(--warn); font-size:11px; font-weight:700; }
+  .vrow.pending-row { background:rgba(232,180,74,.08); border:1px solid rgba(232,180,74,.3);
+    border-radius:8px; padding:8px 10px; margin-bottom:4px; }
+  .vrow.pending-row.flash { background:rgba(232,180,74,.28); transition:background .3s; }
+  .btn.blocked { background:var(--surface-2); color:var(--warn); border:1.5px solid rgba(232,180,74,.4);
+    font-size:13px; }
   .btn-enc { font-size:11px; padding:3px 8px; border-radius:6px; border:1px solid var(--gold-dim); background:transparent; color:var(--gold); cursor:pointer; }
   .btn-enc:active { background:var(--gold); color:#1a1000; }
   .btn-del { background:transparent; border:none; color:var(--ko); cursor:pointer; font-size:15px; line-height:1; padding:2px 5px; border-radius:4px; }
@@ -466,11 +471,13 @@
   // ── Terminer / Valider ──
   function renderTerminer() {
     const el = $("terminerVentes");
-    if (!st.ventes.length) { el.innerHTML = `<p class="muted">Aucune vente.</p>`; return; }
-    el.innerHTML = st.ventes.map(v => {
+    if (!st.ventes.length) { el.innerHTML = `<p class="muted">Aucune vente.</p>`; updateValiderState(); return; }
+    // Les ventes à régler d'abord, surlignées — impossible de les manquer
+    const sorted = [...st.ventes].sort((a,b) => (a.paiement==="a_regler"?0:1) - (b.paiement==="a_regler"?0:1));
+    el.innerHTML = sorted.map(v => {
       const isPending = v.paiement === "a_regler";
-      return `<div class="vrow">
-        <span>${escHtml(v.produit_nom)} ×${v.qty} <span class="muted">(${escHtml(v.table_label||"")})</span></span>
+      return `<div class="vrow${isPending?" pending-row":""}">
+        <span>${escHtml(v.produit_nom)} ×${v.qty} <span class="muted">(${escHtml(v.table_label||"")})</span>${isPending?' <span class="tag-pending">À régler</span>':""}</span>
         <span class="vrow-actions">
           <b>${gnf(v.total)}</b>
           ${isPending
@@ -480,6 +487,21 @@
       </div>`;
     }).join("");
     updateTotals();
+    updateValiderState();
+  }
+
+  // Le bouton Valider se bloque tant qu'il reste des ventes "À régler" :
+  // la serveuse DOIT choisir Esp ou OM pour chacune — plus de confirm esquivable.
+  function updateValiderState() {
+    const n = st.ventes.filter(v => v.paiement === "a_regler").length;
+    const btn = $("btnValider");
+    if (n > 0) {
+      btn.classList.add("blocked");
+      btn.innerHTML = `⚠ Règle d'abord ${n} vente${n>1?"s":""} "À régler" (Esp ou OM)`;
+    } else {
+      btn.classList.remove("blocked");
+      btn.textContent = "Valider ma session";
+    }
   }
 
   function updateTotals() {
@@ -508,7 +530,12 @@
     if (validating) return;
     if (locked()) { toast("Caisse clôturée — vois avec la caissière","ko"); return; }
     const pending = st.ventes.filter(v => v.paiement === "a_regler");
-    if (pending.length && !confirm(`${pending.length} vente(s) encore "À régler". Valider quand même ?`)) return;
+    if (pending.length) {
+      toast(`Impossible de valider : ${pending.length} vente${pending.length>1?"s":""} "À régler" — choisis Esp ou OM`, "ko");
+      const first = document.querySelector(".pending-row");
+      if (first) { first.scrollIntoView({ behavior:"smooth", block:"center" }); first.classList.add("flash"); setTimeout(()=>first.classList.remove("flash"), 1200); }
+      return;
+    }
     validating = true; $("btnValider").disabled = true;
     try {
       const esp = st.ventes.filter(v=>v.paiement==="especes").reduce((a,v)=>a+(v.total||0),0);

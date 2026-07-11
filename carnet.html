@@ -72,6 +72,7 @@
   .erow .del:hover { background:rgba(224,84,84,.15); color:var(--ko); }
   .erow .apres-input { width:64px; margin:0; flex-shrink:0; padding:8px 9px; }
   .erow .save-apres { width:auto; flex-shrink:0; padding:8px 12px; }
+  .erow.pending { background:var(--gold-dim); border-color:rgba(240,168,48,.3); }
 
   /* ── Récap du mois ─────────────────────────────────────────── */
   .mrow { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); font-size:13.5px; }
@@ -134,14 +135,16 @@
   <!-- Chiffres du jour -->
   <div class="card">
     <h2 style="margin-top:0">Chiffres du jour</h2>
-    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Ventes calculées depuis le stock (ci-dessous) — rien à retaper ici.</p>
+    <p class="muted" style="font-size:12px;margin:-4px 0 10px">Ventes calculées depuis le stock (ci-dessous) — plus la recette que tu ajoutes toi-même.</p>
     <div class="stock-calc-row" id="stockCalcRow">
       <span>Chicha <b id="calcChicha">0 GNF</b></span>
       <span>Boissons <b id="calcBoissons">0 GNF</b></span>
+      <span id="calcRecetteWrap" style="display:none">+ Recette manuelle <b id="calcRecette">0 GNF</b></span>
+      <span style="margin-left:auto;font-weight:700">= Total <b id="calcTotal" style="color:var(--gold)">0 GNF</b></span>
     </div>
     <div class="two-col mt">
+      <div><label>Recette du jour — saisie manuelle (GNF)</label><input type="number" id="recetteInput" min="0" inputmode="numeric"></div>
       <div><label>Fond de caisse (GNF)</label><input type="number" id="fondInput" min="0" inputmode="numeric"></div>
-      <div></div>
     </div>
     <label>Note du jour (optionnel)</label>
     <textarea id="noteInput" rows="2" placeholder="ex : soirée foot, coupure courant 2h…"></textarea>
@@ -261,7 +264,7 @@
   }
   function fmtTime(ts){ return new Date(ts).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}); }
   const sum = rows => rows.reduce((a,e)=>a+(e.montant||0),0);
-  const jourVentes = j => (j?.total_chicha||0) + (j?.total_boissons||0);
+  const jourVentes = j => (j?.total_chicha||0) + (j?.total_boissons||0) + (j?.recette_manuelle||0);
 
   /* ── Chargement (requêtes isolées : la page survit sans la migration) ── */
   async function loadMonth(){
@@ -311,7 +314,7 @@
   async function loadGlobal(){
     try {
       const [{ data:jrs, error:e1 }, { data:dep, error:e2 }, { data:stk, error:e3 }] = await Promise.all([
-        db.from("carnet_jours").select("date,total_chicha,total_boissons"),
+        db.from("carnet_jours").select("date,total_chicha,total_boissons,recette_manuelle"),
         db.from("carnet_entrees").select("date,montant").eq("type","depense"),
         db.from("carnet_stock").select("produit,avant,apres"),
       ]);
@@ -355,9 +358,14 @@
     $("sNet").style.color = (vTot-dTot) < 0 ? "var(--ko)" : "var(--gold)";
 
     $("fondInput").value = st.jour?.fond_caisse ?? "";
+    $("recetteInput").value = st.jour?.recette_manuelle ?? "";
     $("noteInput").value = st.jour?.note || "";
     $("calcChicha").textContent = gnf(st.jour?.total_chicha||0);
     $("calcBoissons").textContent = gnf(st.jour?.total_boissons||0);
+    const recMan = st.jour?.recette_manuelle||0;
+    $("calcRecetteWrap").style.display = recMan ? "" : "none";
+    $("calcRecette").textContent = gnf(recMan);
+    $("calcTotal").textContent = gnf(vTot);
 
     $("dayCount").textContent = deps.length ? deps.length + " dépense" + (deps.length>1?"s":"") : "";
     const list = $("list");
@@ -402,7 +410,9 @@
   }
 
   function renderStockToday(){
-    const rows = st.stockToday;
+    // Les comptages pas encore terminés (pas d'"après") remontent en haut —
+    // c'est là que tu dois revenir taper le chiffre en fin de soirée.
+    const rows = [...st.stockToday].sort((a,b) => (a.apres==null?0:1) - (b.apres==null?0:1));
     const el = $("stockToday");
     if (!rows.length){ el.innerHTML = `<p class="muted">Aucun produit compté aujourd'hui.</p>`; }
     else {
@@ -410,12 +420,12 @@
         const conso = r.apres!=null ? r.avant - r.apres : null;
         const p = produitOf(r.produit);
         const val = conso!=null && p ? conso*p.prix : null;
-        return `<div class="erow" data-id="${escHtml(r.id)}">
+        return `<div class="erow${conso==null?" pending":""}" data-id="${escHtml(r.id)}">
           <div class="lbl">
             <div class="lmain">${escHtml(r.produit)}${p?.type==="chicha"?` <span class="mini-tag type-chicha">Chicha</span>`:""}</div>
             <div class="meta2">
               <span class="mini-tag">Avant ${r.avant}</span>
-              ${conso!=null ? `<span class="mini-tag">Après ${r.apres}</span><span class="mini-tag ${conso>=0?"conso-pos":"conso-neg"}">Consommé ${conso}${val!=null?` · ${gnf(val)}`:""}</span>` : ""}
+              ${conso!=null ? `<span class="mini-tag">Après ${r.apres}</span><span class="mini-tag ${conso>=0?"conso-pos":"conso-neg"}">Consommé ${conso}${val!=null?` · ${gnf(val)}`:""}</span>` : `<span class="mini-tag" style="color:var(--warn);border-color:rgba(232,180,74,.35)">⏳ Après à saisir</span>`}
             </div>
           </div>
           ${conso==null
@@ -563,13 +573,14 @@
       date: st.curDate,
       total_chicha: st.jour?.total_chicha ?? 0,
       total_boissons: st.jour?.total_boissons ?? 0,
+      recette_manuelle: st.jour?.recette_manuelle ?? 0,
       fond_caisse: st.jour?.fond_caisse ?? 0,
       note: st.jour?.note ?? null,
       ...patch,
       maj_par: meName, updated_at: new Date().toISOString(),
     };
     const { data, error } = await db.from("carnet_jours").upsert(rec, { onConflict:"date" }).select().single();
-    if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v5) à appliquer dans Supabase" : "Erreur","ko"); return false; }
+    if (error){ toast(["PGRST205","PGRST204"].includes(error.code) ? "Migration carnet (v6) à appliquer dans Supabase" : "Erreur","ko"); return false; }
     st.jour = data;
     const idx = st.joursMois.findIndex(j=>j.date===st.curDate);
     if (idx>=0) st.joursMois[idx] = data; else st.joursMois.push(data);
@@ -578,6 +589,7 @@
   }
   $("saveJourBtn").addEventListener("click", async () => {
     const ok = await saveJour({
+      recette_manuelle: Math.round(Number($("recetteInput").value)||0),
       fond_caisse: Math.round(Number($("fondInput").value)||0),
       note: $("noteInput").value.trim()||null,
     });
@@ -694,10 +706,10 @@
   $("exportBtn").addEventListener("click", () => {
     const dates = [...new Set([...st.joursMois.map(j=>j.date), ...st.entries.map(e=>e.date)])].sort();
     if (!dates.length){ toast("Rien à exporter ce mois"); return; }
-    const header = ["Date","Total Chicha","Total Boissons","Ventes","Dépenses","Net","Fond de caisse","Note"];
+    const header = ["Date","Total Chicha","Total Boissons","Recette manuelle","Ventes","Dépenses","Net","Fond de caisse","Note"];
     const lines = dates.map(d => {
       const j = jourOf(d); const dTot = sum(dayEntries(d)); const vTot = jourVentes(j);
-      return [d, j?.total_chicha||0, j?.total_boissons||0, vTot, dTot, vTot-dTot, j?.fond_caisse||0, j?.note||""];
+      return [d, j?.total_chicha||0, j?.total_boissons||0, j?.recette_manuelle||0, vTot, dTot, vTot-dTot, j?.fond_caisse||0, j?.note||""];
     });
     const csv = [header, ...lines].map(l => l.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
     const blob = new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" });

@@ -377,15 +377,17 @@ ALTER TABLE carnet_entrees DISABLE ROW LEVEL SECURITY;
 
 -- 25. carnet_jours (1 ligne par date) — total_chicha/total_boissons calculés
 --     automatiquement depuis carnet_stock (jamais retapés à la main),
+--     recette_manuelle = saisie libre qui s'AJOUTE (ne remplace pas),
 --     + fond de caisse et note qui restent manuels
 CREATE TABLE IF NOT EXISTS carnet_jours (
-  date           DATE PRIMARY KEY,
-  total_chicha   INTEGER DEFAULT 0,
-  total_boissons INTEGER DEFAULT 0,
-  fond_caisse    INTEGER DEFAULT 0,
-  note           TEXT,
-  maj_par        TEXT,
-  updated_at     TIMESTAMPTZ DEFAULT now()
+  date              DATE PRIMARY KEY,
+  total_chicha      INTEGER DEFAULT 0,
+  total_boissons    INTEGER DEFAULT 0,
+  recette_manuelle  INTEGER DEFAULT 0,
+  fond_caisse       INTEGER DEFAULT 0,
+  note              TEXT,
+  maj_par           TEXT,
+  updated_at        TIMESTAMPTZ DEFAULT now()
 );
 ALTER TABLE carnet_jours DISABLE ROW LEVEL SECURITY;
 

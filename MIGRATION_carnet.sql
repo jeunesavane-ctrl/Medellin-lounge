@@ -102,3 +102,11 @@ INSERT INTO carnet_produits (nom, type, prix) VALUES
   ('Guinness',      'boisson', 20000),
   ('33 Export',     'boisson', 15000)
 ON CONFLICT (nom) DO NOTHING;
+
+-- =====================================================================
+-- v6 — recette manuelle (en plus du stock, pas à la place)
+-- L'utilisateur peut taper directement la recette du jour telle qu'il la
+-- connaît (comptage caisse, estimation...) ; elle s'AJOUTE aux totaux
+-- chicha/boissons calculés depuis le stock, sans les remplacer.
+-- =====================================================================
+ALTER TABLE carnet_jours ADD COLUMN IF NOT EXISTS recette_manuelle INTEGER DEFAULT 0;

@@ -64,6 +64,11 @@ body {
 .ml-brandtext small { font-size: 9px; color: var(--blue); letter-spacing: 3px; font-weight: 600; margin-top: 1px; }
 
 .ml-nav { flex: 1; overflow-y: auto; padding: 10px 8px; display: flex; flex-direction: column; gap: 1px; }
+.ml-group {
+  font-size: 9px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase;
+  color: var(--faint); padding: 12px 10px 5px;
+}
+.ml-group:first-child { padding-top: 4px; }
 .ml-link {
   display: flex; align-items: center; gap: 10px; padding: 9px 10px;
   border-radius: var(--radius-sm); color: var(--muted); text-decoration: none;
@@ -199,7 +204,7 @@ table.ml-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 @media (min-width: 900px) {
   .ml-sidebar { transform: translateX(0); }
   .ml-topbar, .ml-overlay { display: none; }
-  main, .ml-main { margin-left: var(--side); max-width: none; padding: 36px 40px 60px; }
+  main, .ml-main { margin-left: var(--side); max-width: 980px; padding: 36px 40px 60px; }
   .grid-3 { grid-template-columns: repeat(3, 1fr); }
   h1 { font-size: 26px; } .hero h1 { font-size: 26px; }
 }

@@ -174,26 +174,26 @@ async function stockMvt(produit_id, qty, source, note, ref_id) {
 const ROLE_LABEL = { owner: "Gestionnaire", manager: "Manager", caissier: "Caissier", staff: "Serveuse", chicha: "Chicha", achats: "Achats", associe: "Associé" };
 
 const NAV = [
-  { href: "dashboard.html",  label: "Tableau de bord", icon: "ti-layout-dashboard", roles: ["manager", "owner", "associe"] },
-  { href: "saisie.html",     label: "Ventes",          icon: "ti-shopping-cart",    roles: ["staff"] },
-  { href: "caisse.html",     label: "Caisse",          icon: "ti-cash",             roles: ["caissier", "manager", "owner", "associe"], badge: "nbadge-caisse" },
-  { href: "chicha.html",     label: "Chicha",          icon: "ti-flame",            roles: ["chicha", "manager", "owner"], badge: "nbadge-chicha" },
-  { href: "achats.html",     label: "Achats",          icon: "ti-shopping-bag",     roles: ["achats", "manager", "owner"] },
-  { href: "rapport.html",    label: "Rapport",         icon: "ti-file-text",        roles: ["manager", "owner"] },
-  { href: "rh.html",         label: "RH",              icon: "ti-users",            roles: ["manager", "owner"] },
-  { href: "pointage.html",   label: "Présences",       icon: "ti-calendar",         roles: ["manager", "owner"] },
-  { href: "avances.html",    label: "Avances",         icon: "ti-wallet",           roles: ["manager", "owner"], badge: "nbadge-avances" },
-  { href: "charges.html",    label: "Charges",         icon: "ti-receipt",          roles: ["manager", "owner"] },
-  { href: "produits.html",   label: "Produits",        icon: "ti-box",              roles: ["manager", "owner"] },
-  { href: "stock.html",      label: "Stock",           icon: "ti-package",          roles: ["manager", "owner"] },
-  { href: "finances.html",   label: "Finances",        icon: "ti-chart-line",       roles: ["owner", "manager", "associe"] },
-  { href: "bilan.html",      label: "Bilan",           icon: "ti-report-money",     roles: ["owner", "manager", "associe"] },
-  { href: "associes.html",   label: "Associés",        icon: "ti-users-group",      roles: ["owner", "associe"] },
-  { href: "historique.html", label: "Historique",      icon: "ti-history",          roles: ["manager", "owner"] },
-  { href: "carnet.html",     label: "Carnet",          icon: "ti-notebook",         roles: ["owner"] },
-  { href: "fiche.html",      label: "Ma fiche",        icon: "ti-id-badge-2",       roles: ["staff", "caissier", "chicha", "achats", "manager"] },
-  { href: "avance.html",     label: "Demande avance",  icon: "ti-cash-banknote",    roles: ["staff", "caissier", "chicha", "achats", "manager"] },
-  { href: "parametres.html", label: "Paramètres",      icon: "ti-settings",         roles: ["owner"] },
+  { href: "dashboard.html",  label: "Tableau de bord", icon: "ti-layout-dashboard", roles: ["manager", "owner", "associe"], group: "Service" },
+  { href: "saisie.html",     label: "Ventes",          icon: "ti-shopping-cart",    roles: ["staff"], group: "Service" },
+  { href: "caisse.html",     label: "Caisse",          icon: "ti-cash",             roles: ["caissier", "manager", "owner", "associe"], badge: "nbadge-caisse", group: "Service" },
+  { href: "chicha.html",     label: "Chicha",          icon: "ti-flame",            roles: ["chicha", "manager", "owner"], badge: "nbadge-chicha", group: "Service" },
+  { href: "achats.html",     label: "Achats",          icon: "ti-shopping-bag",     roles: ["achats", "manager", "owner"], group: "Service" },
+  { href: "rapport.html",    label: "Rapport",         icon: "ti-file-text",        roles: ["manager", "owner"], group: "Gestion" },
+  { href: "historique.html", label: "Historique",      icon: "ti-history",          roles: ["manager", "owner"], group: "Gestion" },
+  { href: "carnet.html",     label: "Carnet",          icon: "ti-notebook",         roles: ["owner"], group: "Gestion" },
+  { href: "stock.html",      label: "Stock",           icon: "ti-package",          roles: ["manager", "owner"], group: "Gestion" },
+  { href: "produits.html",   label: "Produits",        icon: "ti-box",              roles: ["manager", "owner"], group: "Gestion" },
+  { href: "charges.html",    label: "Charges",         icon: "ti-receipt",          roles: ["manager", "owner"], group: "Gestion" },
+  { href: "rh.html",         label: "RH",              icon: "ti-users",            roles: ["manager", "owner"], group: "Équipe" },
+  { href: "pointage.html",   label: "Présences",       icon: "ti-calendar",         roles: ["manager", "owner"], group: "Équipe" },
+  { href: "avances.html",    label: "Avances",         icon: "ti-wallet",           roles: ["manager", "owner"], badge: "nbadge-avances", group: "Équipe" },
+  { href: "finances.html",   label: "Finances",        icon: "ti-chart-line",       roles: ["owner", "manager", "associe"], group: "Direction" },
+  { href: "bilan.html",      label: "Bilan",           icon: "ti-report-money",     roles: ["owner", "manager", "associe"], group: "Direction" },
+  { href: "associes.html",   label: "Associés",        icon: "ti-users-group",      roles: ["owner", "associe"], group: "Direction" },
+  { href: "parametres.html", label: "Paramètres",      icon: "ti-settings",         roles: ["owner"], group: "Direction" },
+  { href: "fiche.html",      label: "Ma fiche",        icon: "ti-id-badge-2",       roles: ["staff", "caissier", "chicha", "achats", "manager"], group: "Moi" },
+  { href: "avance.html",     label: "Demande avance",  icon: "ti-cash-banknote",    roles: ["staff", "caissier", "chicha", "achats", "manager"], group: "Moi" },
 ];
 
 function renderNav() {
@@ -202,9 +202,14 @@ function renderNav() {
   const role = ML.getRole();
   const extra = ML.getExtra();
   const current = location.pathname.split("/").pop() || "index.html";
-  let html = "";
-  for (const item of NAV) {
-    if (!item.roles.includes(role)) continue;
+  const visible = NAV.filter((i) => i.roles.includes(role));
+  const nbGroups = new Set(visible.map((i) => i.group)).size;
+  let html = "", lastGroup = null;
+  for (const item of visible) {
+    if (nbGroups > 1 && item.group !== lastGroup) {
+      html += `<div class="ml-group">${escHtml(item.group)}</div>`;
+      lastGroup = item.group;
+    }
     const active = item.href === current ? " active" : "";
     const badge = item.badge ? `<span class="ml-badge" id="${item.badge}" hidden></span>` : "";
     html += `<a href="${item.href}" class="ml-link${active}">

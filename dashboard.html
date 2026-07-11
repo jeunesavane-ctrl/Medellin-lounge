@@ -24,6 +24,20 @@
 @media (min-width: 680px) {
   .charts-row { grid-template-columns: 1fr 210px; }
 }
+
+/* Raccourcis d'action */
+.quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+@media (min-width: 680px) { .quick { grid-template-columns: repeat(6, 1fr); } }
+.qk {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  padding: 14px 6px 12px; text-decoration: none;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  transition: border-color .15s, background .15s;
+}
+.qk:active { transform: scale(.96); }
+.qk:hover { border-color: rgba(201,110,72,.35); background: var(--surface-2); }
+.qk i { font-size: 21px; color: var(--blue-soft); }
+.qk span { font-size: 11px; font-weight: 600; color: var(--text); letter-spacing: .2px; }
 </style>
 </head><body>
 <div id="toast"></div>
@@ -33,6 +47,9 @@
     <h1 id="greet">Tableau de bord</h1>
     <div class="hsub" id="todayLbl"></div>
   </div>
+
+  <!-- Raccourcis -->
+  <div class="quick" id="quick" hidden></div>
 
   <!-- KPIs -->
   <div class="grid grid-3" id="kpis" hidden>
@@ -131,6 +148,21 @@
     $("todayLbl").textContent = frDate(todayISO());
 
     if (role === "associe") { $("associeCard").hidden = false; return; }
+
+    // Raccourcis vers les gestes du quotidien (le Carnet est réservé à l'owner)
+    const QUICK = [
+      { href:"caisse.html",   icon:"ti-cash",       label:"Caisse" },
+      { href:"chicha.html",   icon:"ti-flame",      label:"Chicha" },
+      { href:"rapport.html",  icon:"ti-file-text",  label:"Rapport" },
+      { href:"stock.html",    icon:"ti-package",    label:"Stock" },
+      role === "owner"
+        ? { href:"carnet.html",   icon:"ti-notebook",   label:"Carnet" }
+        : { href:"achats.html",   icon:"ti-shopping-bag", label:"Achats" },
+      { href:"finances.html", icon:"ti-chart-line", label:"Finances" },
+    ];
+    $("quick").innerHTML = QUICK.map(q =>
+      `<a class="qk" href="${q.href}"><i class="ti ${q.icon}"></i><span>${q.label}</span></a>`).join("");
+    $("quick").hidden = false;
 
     $("kpis").hidden = false;
     $("sessionCard").hidden = false;

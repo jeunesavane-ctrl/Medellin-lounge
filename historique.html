@@ -320,27 +320,18 @@
 
     const sid = rap.session_id;
 
-    if (sid) {
-      const { data: ventes } = await db.from("ventes_session").select("produit_id,qty").eq("session_id", sid);
-      const stockMap = {};
-      (ventes || []).forEach(v => { if (v.produit_id) stockMap[v.produit_id] = (stockMap[v.produit_id] || 0) + (v.qty || 0); });
-      await Promise.all(Object.entries(stockMap).map(async ([pid, qty]) => {
-        const { data: p } = await db.from("produits").select("stock_actuel").eq("id", pid).maybeSingle();
-        if (p) await db.from("produits").update({ stock_actuel: (p.stock_actuel || 0) + qty }).eq("id", pid);
-      }));
-      await Promise.all([
-        db.from("sessions_serveuse").delete().eq("session_caisse_id", sid),
-        db.from("ventes_session").delete().eq("session_id", sid),
-        db.from("sorties_chicha").delete().eq("session_id", sid),
-        db.from("verifications_staff").delete().eq("session_id", sid),
-        db.from("mouvements_caisse").delete().eq("session_id", sid),
-        db.from("achats_session").delete().eq("session_id", sid),
-      ]);
+    try {
+      if (sid) {
+        // Cascade complète (ventes, achats, bons, crédits, session…) + stock restauré
+        await wipeSessionCascade(sid, { restoreStock: true });
+      } else {
+        // Saisie manuelle : uniquement la ligne rapport
+        const { error } = await db.from("rapports").delete().eq("id", id);
+        if (error) throw error;
+      }
+    } catch (e) {
+      console.error(e); toast("Erreur de suppression", "ko"); return;
     }
-
-    const { error } = await db.from("rapports").delete().eq("id", id);
-    if (error) { toast("Erreur de suppression", "ko"); return; }
-    if (sid) await db.from("sessions_caisse").delete().eq("id", sid);
 
     await ML.logAction(`Suppression rapport N°${rap.num} (${rap.date})`);
     toast("Rapport supprimé", "ok");

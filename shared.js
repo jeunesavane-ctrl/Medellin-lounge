@@ -169,6 +169,66 @@ async function stockMvt(produit_id, qty, source, note, ref_id) {
 }
 
 // =====================================================================
+// SUPPRESSION — cascade complète d'une session (ordre enfants → parent)
+// Toutes les tables liées à une session_caisse sont couvertes ici pour
+// éviter qu'un oubli bloque la suppression finale (violation de clé).
+// =====================================================================
+async function wipeSessionCascade(sid, { restoreStock = true } = {}) {
+  if (!sid) return;
+  // 1. Remettre en stock ce qui avait été vendu (annulation d'un jour)
+  if (restoreStock) {
+    const { data: ventes } = await db.from("ventes_session").select("produit_id,qty").eq("session_id", sid);
+    const map = {};
+    (ventes || []).forEach(v => { if (v.produit_id) map[v.produit_id] = (map[v.produit_id] || 0) + (v.qty || 0); });
+    for (const [pid, qty] of Object.entries(map)) {
+      const { data: p } = await db.from("produits").select("stock_actuel").eq("id", pid).maybeSingle();
+      if (p) await db.from("produits").update({ stock_actuel: (p.stock_actuel || 0) + qty }).eq("id", pid);
+    }
+  }
+  // 2. Enfants d'abord (chaque delete isolé : une table absente ne bloque pas)
+  const del = (t, col) => db.from(t).delete().eq(col, sid).then(r => r, () => ({}));
+  await del("bons_chicha", "session_id");
+  await Promise.all([
+    del("ventes_session", "session_id"),
+    del("verifications_staff", "session_id"),
+    del("mouvements_caisse", "session_id"),
+    del("achats_session", "session_id"),
+    del("sorties_chicha", "session_id"),
+    del("credits", "session_id"),
+    del("remboursements_ecart", "session_id"),
+    del("rapports", "session_id"),
+    del("sessions_serveuse", "session_caisse_id"),
+  ]);
+  // 3. La session elle-même en dernier
+  await db.from("sessions_caisse").delete().eq("id", sid);
+}
+
+// =====================================================================
+// RÉINITIALISATION — efface TOUTES les ventes / rapports du système.
+// Ne touche PAS : produits/stock, employés, associés, charges, RH, config.
+// Owner uniquement. Ordre enfants → parents pour respecter les clés.
+// =====================================================================
+async function wipeAllSalesData() {
+  const NONE = "00000000-0000-0000-0000-000000000000";
+  const wipe = (t) => db.from(t).delete().neq("id", NONE).then(r => r, () => ({}));
+  await wipe("bons_chicha");
+  await Promise.all([
+    wipe("ventes_session"),
+    wipe("verifications_staff"),
+    wipe("mouvements_caisse"),
+    wipe("achats_session"),
+    wipe("sorties_chicha"),
+    wipe("credits"),
+    wipe("remboursements_ecart"),
+    wipe("rapports"),
+    wipe("sessions_serveuse"),
+  ]);
+  await wipe("sessions_caisse");
+  // Libère toutes les tables physiques (aucune session active)
+  await db.from("tables_lounge").update({ ouverte_par: null }).not("ouverte_par", "is", null);
+}
+
+// =====================================================================
 // NAVIGATION — 18 pages, filtrées par rôle (CDC §3)
 // =====================================================================
 const ROLE_LABEL = { owner: "Gestionnaire", manager: "Manager", caissier: "Caissier", staff: "Serveuse", chicha: "Chicha", achats: "Achats", associe: "Associé" };
